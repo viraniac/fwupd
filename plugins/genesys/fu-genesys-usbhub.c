@@ -11,6 +11,7 @@
 #include <gusb.h>
 #include <string.h>
 
+#include "fu-genesys-flash-info-table.h"
 #include "fu-genesys-usbhub.h"
 
 #define GENESYS_USBHUB_STATIC_TOOL_DESC_IDX_USB_3_0  0x84
@@ -28,7 +29,8 @@
 #define GENESYS_USBHUB_ENCRYPT_REGION_START 0x01
 #define GENESYS_USBHUB_ENCRYPT_REGION_END   0x15
 
-#define GENESYS_USBHUB_USB_TIMEOUT 5000 /* ms */
+#define GENESYS_USBHUB_USB_TIMEOUT	   5000 /* ms */
+#define GENESYS_USBHUB_FLASH_WRITE_TIMEOUT 500	/* ms */
 
 typedef enum {
 	TOOL_STRING_VERSION_9BYTE_DYNAMIC,
@@ -45,6 +47,21 @@ typedef enum {
 	ISP_EXIT,
 	ISP_ENTER,
 } IspMode;
+
+typedef enum {
+	ISP_MODEL_UNKNOWN,
+
+	/* hub */
+	ISP_MODEL_HUB_GL3510,
+	ISP_MODEL_HUB_GL3521,
+	ISP_MODEL_HUB_GL3523,
+	ISP_MODEL_HUB_GL3590,
+	ISP_MODEL_HUB_GL7000,
+	ISP_MODEL_HUB_GL3525,
+
+	/* PD */
+	ISP_MODEL_PD_GL9510,
+} IspModel;
 
 typedef struct __attribute__((packed)) {
 	guint8 tool_string_version; /* 0xff = not supported */
@@ -157,6 +174,10 @@ struct _FuGenesysUsbhub {
 	FirmwareInfoToolString fwinfo_tool_info;
 	VendorSupportToolString vendor_support_tool_info;
 	VendorCommandSetting vcs;
+	guint32 isp_model;
+	guint32 flash_erase_delay;
+	guint32 flash_write_delay;
+	int flash_chip_idx;
 };
 
 G_DEFINE_TYPE(FuGenesysUsbhub, fu_genesys_usbhub, FU_TYPE_USB_DEVICE)
@@ -176,15 +197,76 @@ fu_genesys_usbhub_reset(FuGenesysUsbhub *self, GError **error)
 					   0,	   /* idx */
 					   NULL,   /* data */
 					   0,	   /* data length */
-					   NULL,   /* actial length */
+					   NULL,   /* actual length */
 					   (guint)GENESYS_USBHUB_USB_TIMEOUT,
 					   NULL,
 					   error)) {
-		g_prefix_error(error, "send data error: ");
+		g_prefix_error(error, "error resetting device: ");
 		return FALSE;
 	}
 
 	return TRUE;
+}
+
+/*
+ * Returns an index into the flash_info table. -1 in case of error
+ * NOTE: This requires the device to be in ISP mode, eg.:
+ *
+ *   fu_genesys_usbhub_set_isp_mode(self, ISP_ENTER, error);
+ */
+static int
+fu_genesys_usbhub_get_flash_chip_idx(FuGenesysUsbhub *self, GError **error)
+{
+	GUsbDevice *usb_device = fu_usb_device_get_dev(FU_USB_DEVICE(self));
+	int idx;
+	guint8 i;
+
+	for (i = 0; i < FLASH_CHIP_SUPPORTED_CHIPS; i++) {
+		guint16 val = 0;
+		guint8 buffer[64] = {0};
+
+		if (flash_info[i][FLASH_INFO_RDID_DUMMY_ADDRESS] > 0)
+			val = 0x0001;
+		else
+			val = 0x0002;
+		val |= flash_info[i][FLASH_INFO_READ_FLASH_CMD] << 8;
+
+		if (!g_usb_device_control_transfer(
+			usb_device,
+			G_USB_DEVICE_DIRECTION_DEVICE_TO_HOST,
+			G_USB_DEVICE_REQUEST_TYPE_VENDOR,
+			G_USB_DEVICE_RECIPIENT_DEVICE,
+			self->vcs.req_read,
+			val,						 /* value */
+			0,						 /* idx */
+			buffer,						 /* data */
+			flash_info[i][FLASH_INFO_READ_FLASH_CMD_LENGTH], /* data length */
+			NULL,						 /* actual length */
+			(guint)GENESYS_USBHUB_USB_TIMEOUT,
+			NULL,
+			error)) {
+			g_prefix_error(error, "error reading flash chip: ");
+			return -1;
+		}
+		if (memcmp(buffer,
+			   &flash_info[i][FLASH_INFO_READ_DATA_1],
+			   flash_info[i][FLASH_INFO_READ_FLASH_CMD_LENGTH]) == 0) {
+			idx = i;
+			break;
+		}
+	}
+	if (i >= FLASH_CHIP_SUPPORTED_CHIPS) {
+		g_set_error_literal(error, FWUPD_ERROR, FWUPD_ERROR_INTERNAL, "Unknown flash chip");
+		return -1;
+	}
+
+	self->flash_erase_delay = flash_info[idx][FLASH_INFO_ERASE_DELAY_TIME];
+	if (flash_info[idx][FLASH_INFO_CHIP_ERASE_UNIT] == 1)
+		self->flash_erase_delay *= 1000;
+	else
+		self->flash_erase_delay *= 100;
+
+	return idx;
 }
 
 static gboolean
@@ -350,8 +432,10 @@ fu_genesys_usbhub_authenticate(FuGenesysUsbhub *self, GError **error)
 						      offset_start,
 						      offset_end,
 						      temp_byte,
-						      error))
+						      error)) {
+		g_prefix_error(error, "error authenticating device: ");
 		return FALSE;
+	}
 
 	return TRUE;
 }
@@ -482,6 +566,12 @@ fu_genesys_usbhub_setup(FuDevice *device, GError **error)
 		g_prefix_error(error, "failed to get static tool info from device: ");
 		return FALSE;
 	}
+	if (self->static_tool_info.tool_string_version != 0xff) {
+		if (memcmp(self->static_tool_info.mask_project_ic_type, "3523", 4) == 0)
+			self->isp_model = ISP_MODEL_HUB_GL3523;
+		else if (memcmp(self->static_tool_info.mask_project_ic_type, "3590", 4) == 0)
+			self->isp_model = ISP_MODEL_HUB_GL3590;
+	}
 
 	dynamic_tool_buf =
 	    g_usb_device_get_string_descriptor_bytes_full(usb_device,
@@ -568,6 +658,15 @@ fu_genesys_usbhub_setup(FuDevice *device, GError **error)
 		self->vcs.req_read = 0x82;
 		self->vcs.req_write = 0x83;
 	}
+
+	if (!fu_genesys_usbhub_authenticate(self, error))
+		return FALSE;
+	/* Identify the flash chip */
+	if (!fu_genesys_usbhub_set_isp_mode(self, ISP_ENTER, error))
+		return FALSE;
+	self->flash_chip_idx = fu_genesys_usbhub_get_flash_chip_idx(self, error);
+	if (self->flash_chip_idx < 0)
+		return FALSE;
 #else
 	g_set_error(error,
 		    FWUPD_ERROR,
