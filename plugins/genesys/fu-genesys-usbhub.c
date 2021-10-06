@@ -86,7 +86,7 @@ typedef struct __attribute__((packed)) {
 	guint8 hs_port_number; /* high-speed port number */
 
 	guint8 ss_connection_status; /* bit field. ON = DFP is a super-speed device */
-	guint8 hs_cCnnection_status; /* bit field. ON = DFP is a high-speed device */
+	guint8 hs_connection_status; /* bit field. ON = DFP is a high-speed device */
 	guint8 fs_connection_status; /* bit field. ON = DFP is a full-speed device */
 	guint8 ls_connection_status; /* bit field. ON = DFP is a low-speed device */
 
@@ -145,7 +145,7 @@ typedef struct __attribute__((packed)) {
 	guint8 realtek_scaler;
 	guint8 richtek_pd;
 	guint8 ti_pd;
-	guint8 stmPd;
+	guint8 stm_pd;
 	guint8 rohm_pd;
 	guint8 eevertech_pd;
 	guint8 hp_proprietary;
