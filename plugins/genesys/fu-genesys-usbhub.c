@@ -28,6 +28,9 @@
 
 #define GENESYS_USBHUB_CODE_SIZE_OFFSET 0xFB
 
+#define GENESYS_USBHUB_FW_VERS_OFFSET   0x10E
+#define GENESYS_USBHUB_FW_VERS_LEN      2
+
 #define GENESYS_USBHUB_CS_ISP_SW     0xA1
 #define GENESYS_USBHUB_CS_ISP_READ   0xA2
 #define GENESYS_USBHUB_CS_ISP_WRITE  0xA3
@@ -184,6 +187,7 @@ struct _FuGenesysUsbhub {
 	gboolean support_fw_recovery;
 
 	guint32 fw_bank_addr[2];
+	guint16 fw_bank_vers[2];
 	guint32 code_size; /* 0: get from device */
 	guint32 fw_data_total_count;
 	guint32 extend_size;
@@ -669,6 +673,28 @@ fu_genesys_usbhub_get_fw_size(FuGenesysUsbhub *self, int bank_num, GError **erro
 	return TRUE;
 }
 
+static gboolean
+fu_genesys_usbhub_get_fw_version(FuGenesysUsbhub *self, int bank_num, GError **error)
+{
+	guint16 ver = 0;
+	g_return_val_if_fail(bank_num < 2, FALSE);
+
+	if (!fu_genesys_usbhub_read_flash(self,
+					  self->fw_bank_addr[bank_num] +
+					      GENESYS_USBHUB_FW_VERS_OFFSET,
+					  (guint8 *)&ver,
+					  GENESYS_USBHUB_FW_VERS_LEN,
+					  error)) {
+		g_prefix_error(error,
+			       "error getting fw version (bank %d) from device: ",
+			       bank_num);
+		return FALSE;
+	}
+	self->fw_bank_vers[bank_num] = ver;
+
+	return TRUE;
+}
+
 static GBytes *
 fu_genesys_usbhub_dump_firmware(FuDevice *device, FuProgress *progress, GError **error)
 {
@@ -912,6 +938,15 @@ fu_genesys_usbhub_setup(FuDevice *device, GError **error)
 	default:
 		break;
 	}
+
+	/* [TODO] Check for firmware integrity? */
+	/* Get firmware versions */
+	if (!fu_genesys_usbhub_get_fw_version(self, 0, error))
+		return FALSE;
+
+	if (self->support_fw_recovery)
+		if (!fu_genesys_usbhub_get_fw_version(self, 1, error))
+			return FALSE;
 #else
 	g_set_error(error,
 		    FWUPD_ERROR,
@@ -922,6 +957,166 @@ fu_genesys_usbhub_setup(FuDevice *device, GError **error)
 	return FALSE;
 #endif
 	return TRUE;
+}
+
+static gboolean
+fu_genesys_usbhub_write_flash(FuGenesysUsbhub *self,
+			      guint start_addr,
+			      const guint8 *buf,
+			      guint len,
+			      GError **error)
+{
+	GUsbDevice *usb_device = fu_usb_device_get_dev(FU_USB_DEVICE(self));
+	const guint off = start_addr % 0x10000;
+	const guint blk = start_addr / 0x10000;
+	WaitFlashRegisterHelper helper;
+	guint addr = start_addr;
+	guint count = 0;
+
+	helper.reg = 5;
+	helper.expected_val = 0;
+	if (self->flash_rw_size == 0) {
+		self->flash_rw_size = fu_genesys_usbhub_get_flash_rw_size(self);
+	}
+	while (count < len) {
+		int transfer_len = ((len - count) < self->flash_rw_size) ? len - count
+									 : self->flash_rw_size;
+
+		if (!g_usb_device_control_transfer(usb_device,
+						   G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE,
+						   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
+						   G_USB_DEVICE_RECIPIENT_DEVICE,
+						   self->vcs.req_write,
+						   (((off + count) >> 16) + blk) * 0x1000, /* value */
+						   off + count,	                           /* idx */
+						   (guint8 *)buf + count,		   /* data FIXME: create a tmp buffer! */
+						   transfer_len,	                   /* data length */
+						   NULL,		                   /* actual length */
+						   (guint)GENESYS_USBHUB_USB_TIMEOUT,
+						   NULL,
+						   error)) {
+			g_prefix_error(error, "error writing flash at @%0x: ", addr);
+			return FALSE;
+		}
+
+		if (!fu_device_retry(FU_DEVICE(self),
+				     fu_genesys_usbhub_wait_flash_status_register_cb,
+				     self->flash_write_delay / 30,
+				     &helper,
+				     error)) {
+			g_prefix_error(error, "error writing flash: ");
+		}
+
+		addr += transfer_len;
+		count += transfer_len;
+	}
+
+	return TRUE;
+}
+
+static gboolean
+fu_genesys_usbhub_write_firmware(FuDevice *device,
+				 FuFirmware *fw,
+				 FuProgress *progress,
+				 FwupdInstallFlags flags,
+				 GError **error)
+{
+	FuGenesysUsbhub *self = FU_GENESYS_USBHUB(device);
+	g_autoptr(FuDeviceLocker) locker = NULL;
+	gsize address = self->fw_bank_addr[0];
+	GBytes *fw_blob;
+
+	fw_blob = fu_firmware_get_bytes(fw, error);
+	if (!fw_blob)
+		return FALSE;
+
+	/* Write recovery needed? */
+	if (self->support_fw_recovery) {
+		/* First bank and recovery are both blanks: write fw on both */
+		if (!self->fw_bank_vers[0] && !self->fw_bank_vers[1])
+			address = self->fw_bank_addr[1];
+		/* First bank is more recent than recovery: write fw on recovery first */
+		else if (self->fw_bank_vers[0] > self->fw_bank_vers[1])
+			address = self->fw_bank_addr[1];
+		/* Recovery is more recent than first bank: write fw on first bank only */
+		else
+			address = self->fw_bank_addr[0];
+	}
+
+	/* [TODO] Needed? */
+	locker = fu_device_locker_new(self, error);
+	if (locker == NULL)
+		return FALSE;
+
+	/*
+	 * [TODO] Does the fwupd plugin have to update the "recovery" bank?
+	 *        Clarify how the "recovery" bank works.
+	 */
+	/* Write fw to recovery bank first? */
+	if (address != self->fw_bank_addr[0]) {
+		g_autofree guint8 *buf = NULL;
+		gsize bufsz = 0;
+
+		/* Reuse fw on first bank for GL3523 */
+		if (self->isp_model == ISP_MODEL_HUB_GL3523) {
+			bufsz = self->code_size;
+			if (!bufsz)
+				return FALSE;
+
+			buf = g_malloc0(bufsz);
+			if (!bufsz)
+				return FALSE;
+
+			if (!fu_genesys_usbhub_read_flash(self,
+							  self->fw_bank_addr[0],
+							  buf,
+							  bufsz,
+							  error))
+				return FALSE;
+		}
+
+		if (!fu_genesys_usbhub_write_flash(self,
+						   self->fw_bank_addr[1],
+						   buf   ? buf   : g_bytes_get_data(fw_blob, NULL),
+						   bufsz ? bufsz : g_bytes_get_size(fw_blob),
+						   error))
+			return FALSE;
+	}
+
+	/* Write fw to first bank then */
+	return fu_genesys_usbhub_write_flash(self,
+					     self->fw_bank_addr[0],
+					     g_bytes_get_data(fw_blob, NULL),
+					     g_bytes_get_size(fw_blob),
+					     error);
+}
+
+static gboolean
+fu_genesys_usbhub_detach(FuDevice *device, FuProgress *progress, GError **error)
+{
+	FuGenesysUsbhub *self = FU_GENESYS_USBHUB(device);
+
+	return fu_genesys_usbhub_set_isp_mode(self, ISP_ENTER, error);
+}
+
+static gboolean
+fu_genesys_usbhub_attach(FuDevice *device, FuProgress *progress, GError **error)
+{
+	FuGenesysUsbhub *self = FU_GENESYS_USBHUB(device);
+
+	if (!fu_genesys_usbhub_set_isp_mode(self, ISP_EXIT, error))
+		return FALSE;
+
+	/*
+	 * [FIXME]: Reset is required but it ends with:
+	 *
+	 * error resetting device: endpoint stalled or request not supported
+	 *
+	 * If the ISP is exited, it it ends with:
+	 *
+	 * failed to reload device: USB error on device 03f0:0610 : No such device (it may have been disconnected) [-4]
+	 */
+	return fu_genesys_usbhub_reset(self, error);
 }
 
 static void
@@ -939,4 +1134,7 @@ fu_genesys_usbhub_class_init(FuGenesysUsbhubClass *klass)
 	klass_device->open = fu_genesys_usbhub_open;
 	klass_device->setup = fu_genesys_usbhub_setup;
 	klass_device->dump_firmware = fu_genesys_usbhub_dump_firmware;
+	klass_device->write_firmware = fu_genesys_usbhub_write_firmware;
+	klass_device->detach = fu_genesys_usbhub_detach;
+	klass_device->attach = fu_genesys_usbhub_attach;
 }
