@@ -21,6 +21,12 @@
 #define GENESYS_USBHUB_FW_INFO_DESC_IDX		     0x83
 #define GENESYS_USBHUB_VENDOR_SUPPORT_DESC_IDX	     0x86
 
+#define GENESYS_USBHUB_FW_SIG_OFFSET   0xFC
+#define GENESYS_USBHUB_FW_SIG_LEN      4
+#define GENESYS_USBHUB_FW_SIG_TEXT_HUB "XROM"
+
+#define GENESYS_USBHUB_CODE_SIZE_OFFSET 0xFB
+
 #define GENESYS_USBHUB_CS_ISP_SW     0xA1
 #define GENESYS_USBHUB_CS_ISP_READ   0xA2
 #define GENESYS_USBHUB_CS_ISP_WRITE  0xA3
@@ -28,6 +34,9 @@
 
 #define GENESYS_USBHUB_ENCRYPT_REGION_START 0x01
 #define GENESYS_USBHUB_ENCRYPT_REGION_END   0x15
+
+#define GL3523_PUBLIC_KEY_LEN 0x212
+#define GL3523_SIG_LEN	      0x100
 
 #define GENESYS_USBHUB_USB_TIMEOUT	   5000 /* ms */
 #define GENESYS_USBHUB_FLASH_WRITE_TIMEOUT 500	/* ms */
@@ -47,6 +56,11 @@ typedef enum {
 	ISP_EXIT,
 	ISP_ENTER,
 } IspMode;
+
+typedef enum {
+	FLASH_ERASE,
+	FLASH_WRITE,
+} FlashOperationCmd;
 
 typedef enum {
 	ISP_MODEL_UNKNOWN,
@@ -69,7 +83,7 @@ typedef struct __attribute__((packed)) {
 	guint8 mask_project_code[4];
 	guint8 mask_project_hardware[1]; /* 0=a, 1=b... */
 	guint8 mask_project_firmware[2]; /* 01,02,03... */
-	guint8 mask_project_ic_type[6];	 /* 352310=GL3523-10 */
+	guint8 mask_project_ic_type[6];	 /* 352310=GL3523-10 (ASCII string) */
 
 	guint8 running_project_code[4];
 	guint8 running_project_hardware[1];
@@ -175,12 +189,102 @@ struct _FuGenesysUsbhub {
 	VendorSupportToolString vendor_support_tool_info;
 	VendorCommandSetting vcs;
 	guint32 isp_model;
+	guint8 isp_revision;
 	guint32 flash_erase_delay;
 	guint32 flash_write_delay;
+	guint flash_rw_size;
 	int flash_chip_idx;
+
+	gboolean is_mask_code;
+	gboolean support_fw_recovery;
+
+	guint32 fw_bank_addr[2];
+	guint32 code_size; /* 0: get from device */
+	guint32 fw_data_total_count;
+	guint32 extend_size;
 };
 
 G_DEFINE_TYPE(FuGenesysUsbhub, fu_genesys_usbhub, FU_TYPE_USB_DEVICE)
+
+/* [TODO] Think about moving this to the quirk file */
+static guint
+fu_genesys_usbhub_get_flash_rw_size(FuGenesysUsbhub *self)
+{
+	GUsbDevice *usb_device = fu_usb_device_get_dev(FU_USB_DEVICE(self));
+	guint rw_size;
+
+	/*
+	 * Workaround for GL3523-10 mask code bug. AAI programming
+	 * doesn't work -> use 1-byte r/w size.
+	 */
+	if (flash_info[self->flash_chip_idx][FLASH_INFO_AAI_MODE_LOW] &&
+	    self->isp_model == ISP_MODEL_HUB_GL3523 && self->isp_revision == 10 &&
+	    self->is_mask_code)
+		return 1;
+
+	rw_size = flash_info[self->flash_chip_idx][FLASH_INFO_FLASH_WRITE_LENGTH];
+	if (rw_size <= 64)
+		return rw_size;
+
+	if (g_usb_device_get_spec(usb_device) >= 0x300) {
+		if (rw_size <= 128)
+			return rw_size;
+		rw_size -= 128;
+		rw_size *= 128;
+		if (rw_size > 128) {
+			if (self->isp_model == ISP_MODEL_HUB_GL3523 ||
+			    self->isp_model == ISP_MODEL_HUB_GL3590)
+				rw_size = 256;
+			else
+				rw_size = 64;
+		}
+		if (rw_size > 512)
+			return 512;
+	}
+
+	/* USB2.0 */
+	return 64;
+}
+
+static gboolean
+fu_genesys_usbhub_read_flash(FuGenesysUsbhub *self,
+			     guint start_addr,
+			     guint8 *buf,
+			     guint len,
+			     GError **error)
+{
+	GUsbDevice *usb_device = fu_usb_device_get_dev(FU_USB_DEVICE(self));
+	guint addr = start_addr;
+	guint count = 0;
+
+	if (self->flash_rw_size == 0) {
+		self->flash_rw_size = fu_genesys_usbhub_get_flash_rw_size(self);
+	}
+	while (count < len) {
+		int transfer_len = ((len - count) < self->flash_rw_size) ? len - count
+									 : self->flash_rw_size;
+		if (!g_usb_device_control_transfer(usb_device,
+						   G_USB_DEVICE_DIRECTION_DEVICE_TO_HOST,
+						   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
+						   G_USB_DEVICE_RECIPIENT_DEVICE,
+						   self->vcs.req_read,
+						   (addr & 0x0f0000) >> 4, /* value */
+						   addr & 0xffff,	   /* idx */
+						   buf + count,		   /* data */
+						   transfer_len,	   /* data length */
+						   NULL,		   /* actual length */
+						   (guint)GENESYS_USBHUB_USB_TIMEOUT,
+						   NULL,
+						   error)) {
+			g_prefix_error(error, "error reading flash at @%0x: ", addr);
+			return FALSE;
+		}
+		addr += transfer_len;
+		count += transfer_len;
+	}
+
+	return TRUE;
+}
 
 static gboolean
 fu_genesys_usbhub_reset(FuGenesysUsbhub *self, GError **error)
@@ -209,6 +313,9 @@ fu_genesys_usbhub_reset(FuGenesysUsbhub *self, GError **error)
 }
 
 /*
+ * [TODO]: Think about moving the required flash chip attributes to the
+ * quirk file.
+ *
  * Returns an index into the flash_info table. -1 in case of error
  * NOTE: This requires the device to be in ISP mode, eg.:
  *
@@ -229,7 +336,7 @@ fu_genesys_usbhub_get_flash_chip_idx(FuGenesysUsbhub *self, GError **error)
 			val = 0x0001;
 		else
 			val = 0x0002;
-		val |= flash_info[i][FLASH_INFO_READ_FLASH_CMD] << 8;
+		val |= flash_info[i][FLASH_INFO_RDID_CMD] << 8;
 
 		if (!g_usb_device_control_transfer(
 			usb_device,
@@ -237,11 +344,11 @@ fu_genesys_usbhub_get_flash_chip_idx(FuGenesysUsbhub *self, GError **error)
 			G_USB_DEVICE_REQUEST_TYPE_VENDOR,
 			G_USB_DEVICE_RECIPIENT_DEVICE,
 			self->vcs.req_read,
-			val,						 /* value */
-			0,						 /* idx */
-			buffer,						 /* data */
-			flash_info[i][FLASH_INFO_READ_FLASH_CMD_LENGTH], /* data length */
-			NULL,						 /* actual length */
+			val,					   /* value */
+			0,					   /* idx */
+			buffer,					   /* data */
+			flash_info[i][FLASH_INFO_RDID_CMD_LENGTH], /* data length */
+			NULL,					   /* actual length */
 			(guint)GENESYS_USBHUB_USB_TIMEOUT,
 			NULL,
 			error)) {
@@ -250,7 +357,7 @@ fu_genesys_usbhub_get_flash_chip_idx(FuGenesysUsbhub *self, GError **error)
 		}
 		if (memcmp(buffer,
 			   &flash_info[i][FLASH_INFO_READ_DATA_1],
-			   flash_info[i][FLASH_INFO_READ_FLASH_CMD_LENGTH]) == 0) {
+			   flash_info[i][FLASH_INFO_RDID_CMD_LENGTH]) == 0) {
 			idx = i;
 			break;
 		}
@@ -341,6 +448,31 @@ fu_genesys_usbhub_set_isp_mode(FuGenesysUsbhub *self, IspMode mode, GError **err
 
 	return TRUE;
 }
+
+#if 0
+/* unneeded? */
+static gboolean
+fu_genesys_usbhub_unprotect_flash(FuGenesysUsbhub *self, FlashOperationCmd cmd, GError **error)
+{
+	int cmd_size = 0;
+
+	if (cmd == FLASH_WRITE) {
+		if (self->static_tool_info.tool_string_version >= TOOL_STRING_VERSION_VENDOR_SUPPORT ||
+			(flash_info[self->flash_chip_idx][FLASH_INFO_UNPROTECT_FLAG] & 0x60) <= 0)
+			return TRUE;
+		if (flash_info[self->flash_chip_idx][FLASH_INFO_UNPROTECT_FLAG] & (1 << 7)) {
+			/* enter ISP mode first */
+			if (!fu_genesys_usbhub_set_isp_mode(self, ISP_ENTER, error)) {
+				g_prefix_error(error, "error unprotecting flash for writing");
+				return FALSE;
+			}
+		}
+	}
+
+	cmd_size = flash_info[self->flash_chip_idx][FLASH_INFO_UNPROTECT_FLAG] & 0x0f;
+	if (opcode
+}
+#endif
 
 static gboolean
 fu_genesys_usbhub_authentication_request(FuGenesysUsbhub *self,
@@ -475,7 +607,7 @@ fu_genesys_usbhub_open(FuDevice *device, GError **error)
 static gboolean
 fu_genesys_usbhub_get_descriptor_data(GBytes *desc_bytes,
 				      guint8 *dst,
-				      gsize dst_size,
+				      guint dst_size,
 				      GError **error)
 {
 	const guint8 *buf;
@@ -485,17 +617,84 @@ fu_genesys_usbhub_get_descriptor_data(GBytes *desc_bytes,
 	/* discard first 2 bytes (desc. length and type) */
 	buf += 2;
 	bufsz -= 2;
-	if (bufsz / 2 > dst_size) {
-		g_set_error_literal(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_INVALID_DATA,
-				    "USB descriptor larger than expected");
-		return FALSE;
-	}
-	for (guint8 i = 0, j = 0; i < bufsz; i += 2, j++)
+	for (guint8 i = 0, j = 0; i < bufsz && j < dst_size; i += 2, j++)
 		dst[j] = buf[i];
 
 	return TRUE;
+}
+
+static gboolean
+fu_genesys_usbhub_check_fw_signature(FuGenesysUsbhub *self, int bank_num, GError **error)
+{
+	guint8 sig[GENESYS_USBHUB_FW_SIG_LEN] = {0};
+	g_return_val_if_fail(bank_num < 2, FALSE);
+
+	if (!fu_genesys_usbhub_read_flash(self,
+					  self->fw_bank_addr[bank_num] +
+					      GENESYS_USBHUB_FW_SIG_OFFSET,
+					  sig,
+					  GENESYS_USBHUB_FW_SIG_LEN,
+					  error)) {
+		g_prefix_error(error,
+			       "error getting fw signature (bank %d) from device: ",
+			       bank_num);
+		return FALSE;
+	}
+	if (memcmp(sig, GENESYS_USBHUB_FW_SIG_TEXT_HUB, GENESYS_USBHUB_FW_SIG_LEN) != 0) {
+		g_set_error_literal(error,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INTERNAL,
+				    "wrong firmware signature");
+		return FALSE;
+	}
+
+	return TRUE;
+}
+
+/* read the firmware size from the firmware stored in the device */
+static gboolean
+fu_genesys_usbhub_get_fw_size(FuGenesysUsbhub *self, int bank_num, GError **error)
+{
+	guint8 kbs = 0;
+
+	g_return_val_if_fail(bank_num < 2, FALSE);
+	g_return_val_if_fail(self->code_size == 0, FALSE);
+
+	if (!fu_genesys_usbhub_check_fw_signature(self, bank_num, error))
+		return FALSE;
+
+	/* get firmware size from device */
+	if (!fu_genesys_usbhub_read_flash(self,
+					  self->fw_bank_addr[bank_num] +
+					      GENESYS_USBHUB_CODE_SIZE_OFFSET,
+					  &kbs,
+					  1,
+					  error)) {
+		g_prefix_error(error, "error getting fw size from device: ");
+		return FALSE;
+	}
+	self->code_size = 1024 * kbs;
+
+	return TRUE;
+}
+
+static GBytes *
+fu_genesys_usbhub_dump_firmware(FuDevice *device, FuProgress *progress, GError **error)
+{
+	FuGenesysUsbhub *self = FU_GENESYS_USBHUB(device);
+	g_autofree guint8 *buf = NULL;
+	int size = self->code_size + self->extend_size;
+
+	if (!fu_genesys_usbhub_authenticate(self, error))
+		return NULL;
+	if (!fu_genesys_usbhub_set_isp_mode(self, ISP_ENTER, error))
+		return NULL;
+
+	buf = g_malloc0(size);
+	if (!fu_genesys_usbhub_read_flash(self, self->fw_bank_addr[0], buf, size, error))
+		return NULL;
+
+	return g_bytes_new_take(g_steal_pointer(&buf), size);
 }
 
 static gboolean
@@ -520,6 +719,7 @@ fu_genesys_usbhub_setup(FuDevice *device, GError **error)
 	 * release version: g_usb_device_get_release(usb_device)
 	 */
 
+	/* read standard string descriptors */
 	if (g_usb_device_get_spec(usb_device) >= 0x300) {
 		static_tool_desc_idx = GENESYS_USBHUB_STATIC_TOOL_DESC_IDX_USB_3_0;
 		dynamic_tool_desc_idx = GENESYS_USBHUB_DYNAMIC_TOOL_DESC_IDX_USB_3_0;
@@ -543,6 +743,10 @@ fu_genesys_usbhub_setup(FuDevice *device, GError **error)
 	fu_device_set_name(device, product_str);
 
 #if G_USB_CHECK_VERSION(0, 3, 8)
+	/*
+	 * Read/parse vendor-specific string descriptors and use that
+	 * data to setup device attributes.
+	 */
 	static_tool_buf =
 	    g_usb_device_get_string_descriptor_bytes_full(usb_device,
 							  static_tool_desc_idx,
@@ -567,10 +771,24 @@ fu_genesys_usbhub_setup(FuDevice *device, GError **error)
 		return FALSE;
 	}
 	if (self->static_tool_info.tool_string_version != 0xff) {
-		if (memcmp(self->static_tool_info.mask_project_ic_type, "3523", 4) == 0)
+		char rev[3] = {0};
+		guint64 tmp;
+
+		/* [TODO] Move this to the quirk file */
+		if (memcmp(self->static_tool_info.mask_project_ic_type, "3523", 4) == 0) {
 			self->isp_model = ISP_MODEL_HUB_GL3523;
-		else if (memcmp(self->static_tool_info.mask_project_ic_type, "3590", 4) == 0)
+		} else if (memcmp(self->static_tool_info.mask_project_ic_type, "3590", 4) == 0) {
 			self->isp_model = ISP_MODEL_HUB_GL3590;
+		} else {
+			g_set_error_literal(error,
+					    FWUPD_ERROR,
+					    FWUPD_ERROR_INTERNAL,
+					    "Unknown ISP model");
+			return FALSE;
+		}
+		memcpy(rev, &self->static_tool_info.mask_project_ic_type[4], 2);
+		tmp = fu_common_strtoull(rev);
+		self->isp_revision = tmp;
 	}
 
 	dynamic_tool_buf =
@@ -596,6 +814,8 @@ fu_genesys_usbhub_setup(FuDevice *device, GError **error)
 		g_prefix_error(error, "failed to get dynamic tool info from device: ");
 		return FALSE;
 	}
+	if (self->dynamic_tool_info.running_mode == 'M')
+		self->is_mask_code = TRUE;
 
 	fw_info_buf =
 	    g_usb_device_get_string_descriptor_bytes_full(usb_device,
@@ -615,7 +835,7 @@ fu_genesys_usbhub_setup(FuDevice *device, GError **error)
 			fu_common_dump_raw(G_LOG_DOMAIN,
 					   "Fw info",
 					   (guint8 *)&self->fwinfo_tool_info,
-					   sizeof(DynamicToolString));
+					   sizeof(FirmwareInfoToolString));
 	} else {
 		g_prefix_error(error, "failed to get firmware info from device: ");
 		return FALSE;
@@ -632,7 +852,7 @@ fu_genesys_usbhub_setup(FuDevice *device, GError **error)
 			if (!fu_genesys_usbhub_get_descriptor_data(
 				vendor_support_buf,
 				(guint8 *)&self->vendor_support_tool_info,
-				sizeof(FirmwareInfoToolString),
+				sizeof(VendorSupportToolString),
 				error)) {
 				g_prefix_error(error,
 					       "failed to get vendor support info from device: ");
@@ -642,13 +862,17 @@ fu_genesys_usbhub_setup(FuDevice *device, GError **error)
 				fu_common_dump_raw(G_LOG_DOMAIN,
 						   "Vendor support info",
 						   (guint8 *)&self->vendor_support_tool_info,
-						   sizeof(DynamicToolString));
+						   sizeof(VendorSupportToolString));
 		} else {
 			g_prefix_error(error, "failed to get vendor support info from device: ");
 			return FALSE;
 		}
 	}
 
+	/*
+	 * Device-specific configuration.
+	 * [TODO]: Consider moving these to the quirk file.
+	 */
 	if (self->vendor_support_tool_info.hp_proprietary) {
 		self->vcs.req_switch = GENESYS_USBHUB_CS_ISP_SW;
 		self->vcs.req_read = GENESYS_USBHUB_CS_ISP_READ;
@@ -667,6 +891,36 @@ fu_genesys_usbhub_setup(FuDevice *device, GError **error)
 	self->flash_chip_idx = fu_genesys_usbhub_get_flash_chip_idx(self, error);
 	if (self->flash_chip_idx < 0)
 		return FALSE;
+	self->flash_rw_size = fu_genesys_usbhub_get_flash_rw_size(self);
+
+	/* setup firmware parameters */
+	switch (self->isp_model) {
+	case ISP_MODEL_HUB_GL3523:
+		self->support_fw_recovery = TRUE;
+		self->fw_bank_addr[0] = 0x0000;
+		self->fw_bank_addr[1] = 0x8000;
+		self->fw_data_total_count = 0x6000;
+		self->extend_size = GL3523_PUBLIC_KEY_LEN + GL3523_SIG_LEN;
+		if (self->isp_revision == 50) {
+			self->fw_data_total_count = 0x8000;
+			if (!fu_genesys_usbhub_get_fw_size(self, 0, error))
+				return FALSE;
+		} else {
+			self->code_size = self->fw_data_total_count;
+		}
+		break;
+	case ISP_MODEL_HUB_GL3590:
+		self->support_fw_recovery = TRUE;
+		if (!fu_genesys_usbhub_get_fw_size(self, 0, error))
+			return FALSE;
+		self->fw_bank_addr[0] = 0x0000;
+		self->fw_bank_addr[1] = 0x10000;
+		/* [TODO]: bank address for bridge, necessary? */
+		self->fw_data_total_count = 0x8000;
+		break;
+	default:
+		break;
+	}
 #else
 	g_set_error(error,
 		    FWUPD_ERROR,
@@ -693,4 +947,5 @@ fu_genesys_usbhub_class_init(FuGenesysUsbhubClass *klass)
 	klass_device->probe = fu_genesys_usbhub_probe;
 	klass_device->open = fu_genesys_usbhub_open;
 	klass_device->setup = fu_genesys_usbhub_setup;
+	klass_device->dump_firmware = fu_genesys_usbhub_dump_firmware;
 }
