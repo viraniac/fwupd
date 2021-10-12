@@ -141,18 +141,18 @@ typedef struct __attribute__((packed)) {
 	/*
 	 * 0 means N/A, 1 means support generic type, above 2 means vendor support.
 	 *
-	 * uDfpDevice :     1 = Share Flash Chip.
-	 *                  2 = GL3523-50/ Billboard.
-	 *                  3 = GL3523-50/ C-Bridge.
-	 * uMStarScaler :   2 = MSB9100/ RT1711P.
-	 * uHpProprietary : 1 = support code sign.
-	 *                  2 = HP HW Check Code Signed.
-	 *                  3 = HP SW Check Code Signed.
-	 *                  4 = HP Code Signed Slave.
-	 *                  5 = HP Hub Check Code Signed.
-	 *                  7 = HP HW Check Code Signed (Debug).
-	 *                  8 = HP SW Check Code Signed (Debug).
-	 *                  9 = HP Code Signed Slave (Debug).
+	 * dfp_device:     1 = Share Flash Chip.
+	 *                 2 = GL3523-50/ Billboard.
+	 *                 3 = GL3523-50/ C-Bridge.
+	 * mstar_scaler:   2 = MSB9100/ RT1711P.
+	 * hp_proprietary: 1 = Support code sign.
+	 *                 2 = HP HW Check Code Signed.
+	 *                 3 = HP SW Check Code Signed.
+	 *                 4 = HP Code Signed Slave.
+	 *                 5 = HP Hub Check Code Signed.
+	 *                 7 = HP HW Check Code Signed (Debug).
+	 *                 8 = HP SW Check Code Signed (Debug).
+	 *                 9 = HP Code Signed Slave (Debug).
 	 */
 	guint8 dfp_device;
 	guint8 mstar_scaler;
