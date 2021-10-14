@@ -45,6 +45,17 @@ fu_genesys_firmware_parse(FuFirmware *firmware,
 	g_autofree gchar *fw_version = NULL;
 	guint16 fw_checksum, checksum;
 	guint16 code_size = 0x6000;
+	gboolean is3590 = FALSE;
+
+	/* Check signature */
+	if ((memcmp(buf + 0xFC, "XROM", 4) != 0) &&
+	    (memcmp(buf + 0xFC, "SRON", 4) != 0)) {
+		g_set_error_literal(error,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_NOT_SUPPORTED,
+				    "Signature not supported");
+		return FALSE;
+	}
 
 	/* Get static tool string */
 	if (!fu_memcpy_safe((guint8 *)&self->static_tool_string,
@@ -56,6 +67,52 @@ fu_genesys_firmware_parse(FuFirmware *firmware,
 			    sizeof(self->static_tool_string),
 			    error))
 		return FALSE;
+
+	/* Not a GL3523, is GL3590? */
+	if (memcmp(self->static_tool_string.mask_project_ic_type, "3523", 4) != 0) {
+		if (!fu_memcpy_safe((guint8 *)&self->static_tool_string,
+				    sizeof(self->static_tool_string),
+				    0, /* dst */
+				    buf,
+				    bufsz,
+				    0x241, /* src */
+				    sizeof(self->static_tool_string),
+				    error))
+			return FALSE;
+
+		/* Not a GL3590 either */
+		if (memcmp(self->static_tool_string.mask_project_ic_type, "3590", 4) != 0) {
+			g_set_error_literal(error,
+					    FWUPD_ERROR,
+					    FWUPD_ERROR_NOT_SUPPORTED,
+					    "IC Type not supported");
+			return FALSE;
+		}
+
+		is3590 = TRUE;
+	}
+
+	/* Unsupported static tool string */
+	if (self->static_tool_string.tool_string_version == 0xff) {
+		g_set_error_literal(error,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_NOT_SUPPORTED,
+				    "Static Tool String not supported");
+		return FALSE;
+	}
+
+	/* Deduce code size */
+	if (!is3590) {
+		guint8 ic_type_revision;
+
+		code_size = 0x6000;
+		ic_type_revision = 10 * (self->static_tool_string.mask_project_ic_type[4] - '0') +
+					(self->static_tool_string.mask_project_ic_type[5] - '0');
+		if (ic_type_revision == 50)
+			code_size = 0x8000;
+	} else {
+		code_size = 0x6000;
+	}
 
 	/* Get checksum */
 	if (!fu_common_read_uint16_safe(buf,
