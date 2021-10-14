@@ -20,11 +20,11 @@ G_DEFINE_TYPE(FuGenesysFirmware, fu_genesys_firmware, FU_TYPE_FIRMWARE)
 
 static gboolean
 fu_genesys_firmware_parse(FuFirmware *firmware,
-			    GBytes *fw,
-			    guint64 addr_start,
-			    guint64 addr_end,
-			    FwupdInstallFlags flags,
-			    GError **error)
+			  GBytes *fw,
+			  guint64 addr_start,
+			  guint64 addr_end,
+			  FwupdInstallFlags flags,
+			  GError **error)
 {
 	gsize bufsz = 0;
 	const guint8 *buf = g_bytes_get_data(fw, &bufsz);
