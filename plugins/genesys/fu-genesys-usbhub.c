@@ -960,6 +960,76 @@ fu_genesys_usbhub_setup(FuDevice *device, GError **error)
 }
 
 static gboolean
+fu_genesys_usbhub_erase_flash(FuGenesysUsbhub *self,
+			      guint start_addr,
+			      guint len,
+			      GError **error)
+{
+	GUsbDevice *usb_device = fu_usb_device_get_dev(FU_USB_DEVICE(self));
+	guint blocknum, sectornum, sectormax, flash_erase_len;
+	WaitFlashRegisterHelper helper;
+	guint count;
+	guint8 cmd;
+
+	helper.reg = 5;
+	helper.expected_val = 0;
+	flash_erase_len = flash_info[self->flash_chip_idx][FLASH_INFO_BLOCK_ERASE_LENGTH];
+	if (flash_erase_len == 64) {
+		blocknum = start_addr / 0x10000;
+		sectornum = (start_addr % 0x10000) / 0x1000;
+		sectormax = 0x10;
+		cmd = 0x01;
+	} else {
+		blocknum = start_addr / 0x8000;
+		sectornum = (start_addr % 0x8000) / 0x1000;
+		sectormax = 0x08;
+		cmd = 0x04;
+	}
+	count = len / 0x1000;
+	if (len % 0x1000)
+		count++;
+
+	for (guint i = 0; i < count; i++) {
+		guint16 index = (cmd << 8) | (sectornum << 4) | blocknum;
+
+		if (!g_usb_device_control_transfer(usb_device,
+						   G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE,
+						   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
+						   G_USB_DEVICE_RECIPIENT_DEVICE,
+						   self->vcs.req_write,
+						   0x2001, /* value */
+						   index,  /* idx */
+						   NULL,   /* data */
+						   0,	   /* data length */
+						   NULL,   /* actual length */
+						   (guint)GENESYS_USBHUB_USB_TIMEOUT,
+						   NULL,
+						   error)) {
+			g_prefix_error(error,
+				       "error erasing flash at sector #%0x in block #%0x",
+				       sectornum, blocknum);
+			return FALSE;
+		}
+
+		if (!fu_device_retry(FU_DEVICE(self),
+				     fu_genesys_usbhub_wait_flash_status_register_cb,
+				     self->flash_erase_delay / 30,
+				     &helper,
+				     error)) {
+			g_prefix_error(error, "error erasing flash: ");
+		}
+
+		sectornum++;
+		if (sectornum == sectormax) {
+			sectornum = 0;
+			blocknum++;
+		}
+	}
+
+	return TRUE;
+}
+
+static gboolean
 fu_genesys_usbhub_write_flash(FuGenesysUsbhub *self,
 			      guint start_addr,
 			      const guint8 *buf,
@@ -1075,6 +1145,12 @@ fu_genesys_usbhub_write_firmware(FuDevice *device,
 				return FALSE;
 		}
 
+		if (!fu_genesys_usbhub_erase_flash(self,
+						   self->fw_bank_addr[1],
+						   bufsz ? bufsz : g_bytes_get_size(fw_blob),
+						   error))
+			return FALSE;
+
 		if (!fu_genesys_usbhub_write_flash(self,
 						   self->fw_bank_addr[1],
 						   buf   ? buf   : g_bytes_get_data(fw_blob, NULL),
@@ -1084,6 +1160,12 @@ fu_genesys_usbhub_write_firmware(FuDevice *device,
 	}
 
 	/* Write fw to first bank then */
+	if (!fu_genesys_usbhub_erase_flash(self,
+					   self->fw_bank_addr[0],
+					   g_bytes_get_size(fw_blob),
+					   error))
+		return FALSE;
+
 	return fu_genesys_usbhub_write_flash(self,
 					     self->fw_bank_addr[0],
 					     g_bytes_get_data(fw_blob, NULL),
