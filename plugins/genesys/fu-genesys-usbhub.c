@@ -1147,18 +1147,21 @@ fu_genesys_usbhub_write_firmware(FuDevice *device,
 					   error))
 		return FALSE;
 
-	return fu_genesys_usbhub_write_flash(self,
-					     self->fw_bank_addr[0],
-					     g_bytes_get_data(fw_blob, NULL),
-					     g_bytes_get_size(fw_blob),
-					     error);
-}
 
-static gboolean
-fu_genesys_usbhub_attach(FuDevice *device, FuProgress *progress, GError **error)
-{
-	FuGenesysUsbhub *self = FU_GENESYS_USBHUB(device);
+	if (!fu_genesys_usbhub_write_flash(self,
+					   self->fw_bank_addr[0],
+					   g_bytes_get_data(fw_blob, NULL),
+					   g_bytes_get_size(fw_blob),
+					   error))
+		return FALSE;
 
+	/*
+	 * [FIXME] Reset device and flag it to wait for replug as a simple
+	 * usleep does satisfy fwupd:
+	 *
+	 * Restarting device…       [*************************************  ]
+	 * USB error on device 03f0:0610 : No such device (it may have been disconnected) [-4]
+	 */
 	if (!fu_genesys_usbhub_reset(self, error))
 		return FALSE;
 
@@ -1184,5 +1187,4 @@ fu_genesys_usbhub_class_init(FuGenesysUsbhubClass *klass)
 	klass_device->setup = fu_genesys_usbhub_setup;
 	klass_device->dump_firmware = fu_genesys_usbhub_dump_firmware;
 	klass_device->write_firmware = fu_genesys_usbhub_write_firmware;
-	klass_device->attach = fu_genesys_usbhub_attach;
 }
