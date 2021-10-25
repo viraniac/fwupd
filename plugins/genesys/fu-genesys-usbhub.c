@@ -402,7 +402,6 @@ static gboolean
 fu_genesys_usbhub_set_isp_mode(FuGenesysUsbhub *self, IspMode mode, GError **error)
 {
 	GUsbDevice *usb_device = fu_usb_device_get_dev(FU_USB_DEVICE(self));
-	WaitFlashRegisterHelper helper;
 
 	if (!g_usb_device_control_transfer(usb_device,
 					   G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE,
@@ -423,14 +422,19 @@ fu_genesys_usbhub_set_isp_mode(FuGenesysUsbhub *self, IspMode mode, GError **err
 			       self->vcs.req_switch);
 		return FALSE;
 	}
-	helper.reg = 5;
-	helper.expected_val = 0;
-	if (!fu_device_retry(FU_DEVICE(self),
-			     fu_genesys_usbhub_wait_flash_status_register_cb,
-			     self->flash_write_delay / 30,
-			     &helper,
-			     error)) {
-		g_prefix_error(error, "error setting isp mode: ");
+
+	if (mode == ISP_ENTER) {
+		WaitFlashRegisterHelper helper;
+
+		helper.reg = 5;
+		helper.expected_val = 0;
+		if (!fu_device_retry(FU_DEVICE(self),
+			     	     fu_genesys_usbhub_wait_flash_status_register_cb,
+				     self->flash_write_delay / 30,
+				     &helper,
+				     error)) {
+			g_prefix_error(error, "error setting isp mode: ");
+		}
 	}
 
 	return TRUE;
