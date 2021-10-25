@@ -35,6 +35,9 @@
 #define GENESYS_USBHUB_CS_ISP_READ   0xA2
 #define GENESYS_USBHUB_CS_ISP_WRITE  0xA3
 #define GENESYS_USBHUB_GL_HUB_VERIFY 0x71
+#define GENESYS_USBHUB_GL_HUB_SWITCH 0x81
+#define GENESYS_USBHUB_GL_HUB_READ   0x82
+#define GENESYS_USBHUB_GL_HUB_WRITE  0x83
 
 #define GENESYS_USBHUB_ENCRYPT_REGION_START 0x01
 #define GENESYS_USBHUB_ENCRYPT_REGION_END   0x15
@@ -895,9 +898,9 @@ fu_genesys_usbhub_setup(FuDevice *device, GError **error)
 		self->vcs.req_read = GENESYS_USBHUB_CS_ISP_READ;
 		self->vcs.req_write = GENESYS_USBHUB_CS_ISP_WRITE;
 	} else {
-		self->vcs.req_switch = 0x81;
-		self->vcs.req_read = 0x82;
-		self->vcs.req_write = 0x83;
+		self->vcs.req_switch = GENESYS_USBHUB_GL_HUB_SWITCH;
+		self->vcs.req_read = GENESYS_USBHUB_GL_HUB_READ;
+		self->vcs.req_write = GENESYS_USBHUB_GL_HUB_WRITE;
 	}
 
 	if (!fu_genesys_usbhub_authenticate(self, error))
