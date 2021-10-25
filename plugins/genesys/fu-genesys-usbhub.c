@@ -447,31 +447,6 @@ fu_genesys_usbhub_set_isp_mode(FuGenesysUsbhub *self, IspMode mode, GError **err
 	return TRUE;
 }
 
-#if 0
-/* unneeded? */
-static gboolean
-fu_genesys_usbhub_unprotect_flash(FuGenesysUsbhub *self, FlashOperationCmd cmd, GError **error)
-{
-	int cmd_size = 0;
-
-	if (cmd == FLASH_WRITE) {
-		if (self->static_tool_info.tool_string_version >= TOOL_STRING_VERSION_VENDOR_SUPPORT ||
-			(flash_info[self->flash_chip_idx][FLASH_INFO_UNPROTECT_FLAG] & 0x60) <= 0)
-			return TRUE;
-		if (flash_info[self->flash_chip_idx][FLASH_INFO_UNPROTECT_FLAG] & (1 << 7)) {
-			/* enter ISP mode first */
-			if (!fu_genesys_usbhub_set_isp_mode(self, ISP_ENTER, error)) {
-				g_prefix_error(error, "error unprotecting flash for writing");
-				return FALSE;
-			}
-		}
-	}
-
-	cmd_size = flash_info[self->flash_chip_idx][FLASH_INFO_UNPROTECT_FLAG] & 0x0f;
-	if (opcode
-}
-#endif
-
 static gboolean
 fu_genesys_usbhub_authentication_request(FuGenesysUsbhub *self,
 					 guint8 offset_start,
