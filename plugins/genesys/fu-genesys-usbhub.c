@@ -1164,19 +1164,12 @@ fu_genesys_usbhub_attach(FuDevice *device, FuProgress *progress, GError **error)
 {
 	FuGenesysUsbhub *self = FU_GENESYS_USBHUB(device);
 
-	if (!fu_genesys_usbhub_set_isp_mode(self, ISP_EXIT, error))
+	if (!fu_genesys_usbhub_reset(self, error))
 		return FALSE;
 
-	/*
-	 * [FIXME]: Reset is required but it ends with:
-	 *
-	 * error resetting device: endpoint stalled or request not supported
-	 *
-	 * If the ISP is exited, it it ends with:
-	 *
-	 * failed to reload device: USB error on device 03f0:0610 : No such device (it may have been disconnected) [-4]
-	 */
-	return fu_genesys_usbhub_reset(self, error);
+	fu_device_add_flag(device, FWUPD_DEVICE_FLAG_WAIT_FOR_REPLUG);
+
+	return TRUE;
 }
 
 static void
@@ -1184,6 +1177,7 @@ fu_genesys_usbhub_init(FuGenesysUsbhub *self)
 {
 	fu_device_add_protocol(FU_DEVICE(self), "com.genesys.usbhub");
 	fu_device_retry_set_delay(FU_DEVICE(self), 30); /* ms */
+	fu_device_set_remove_delay(FU_DEVICE(self), 5000); /* ms */
 }
 
 static void
