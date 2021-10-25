@@ -357,6 +357,8 @@ fu_genesys_usbhub_get_flash_chip_idx(FuGenesysUsbhub *self, GError **error)
 		self->flash_erase_delay *= 1000;
 	else
 		self->flash_erase_delay *= 100;
+	self->flash_write_delay = MAX(flash_info[idx][FLASH_INFO_WRITE_DELAY_TIME],
+				      GENESYS_USBHUB_FLASH_WRITE_TIMEOUT);
 
 	return idx;
 }
