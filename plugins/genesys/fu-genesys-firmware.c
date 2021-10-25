@@ -154,6 +154,7 @@ fu_genesys_firmware_export(FuFirmware *firmware,
 			   XbBuilderNode *bn)
 {
 	FuGenesysFirmware *self = FU_GENESYS_FIRMWARE(firmware);
+
 	if (flags & FU_FIRMWARE_EXPORT_FLAG_INCLUDE_DEBUG) {
 		gchar tool_string_version[2] = { '\0' };
 		gchar mask_project_code[5] = { '\0' };
@@ -238,7 +239,7 @@ fu_genesys_firmware_export(FuFirmware *firmware,
 static void
 fu_genesys_firmware_init(FuGenesysFirmware *self)
 {
-        fu_firmware_add_flag(FU_FIRMWARE(self), FU_FIRMWARE_FLAG_HAS_CHECKSUM); 
+        fu_firmware_add_flag(FU_FIRMWARE(self), FU_FIRMWARE_FLAG_HAS_CHECKSUM);
 }
 
 static void
