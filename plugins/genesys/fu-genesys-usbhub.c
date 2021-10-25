@@ -930,7 +930,7 @@ fu_genesys_usbhub_setup(FuDevice *device, GError **error)
 		    FWUPD_ERROR,
 		    FWUPD_ERROR_NOT_SUPPORTED,
 		    "GUsb version %s is too old, "
-		    "fwupd needs to be rebuilt against 0.3.6 or later",
+		    "fwupd needs to be rebuilt against 0.3.8 or later",
 		    g_usb_version_string());
 	return FALSE;
 #endif
