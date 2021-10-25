@@ -1096,6 +1096,9 @@ fu_genesys_usbhub_write_firmware(FuDevice *device,
 	if (locker == NULL)
 		return FALSE;
 
+	if (!fu_genesys_usbhub_set_isp_mode(self, ISP_ENTER, error))
+		return FALSE;
+
 	/*
 	 * [TODO] Does the fwupd plugin have to update the "recovery" bank?
 	 *        Clarify how the "recovery" bank works.
@@ -1152,14 +1155,6 @@ fu_genesys_usbhub_write_firmware(FuDevice *device,
 }
 
 static gboolean
-fu_genesys_usbhub_detach(FuDevice *device, FuProgress *progress, GError **error)
-{
-	FuGenesysUsbhub *self = FU_GENESYS_USBHUB(device);
-
-	return fu_genesys_usbhub_set_isp_mode(self, ISP_ENTER, error);
-}
-
-static gboolean
 fu_genesys_usbhub_attach(FuDevice *device, FuProgress *progress, GError **error)
 {
 	FuGenesysUsbhub *self = FU_GENESYS_USBHUB(device);
@@ -1189,6 +1184,5 @@ fu_genesys_usbhub_class_init(FuGenesysUsbhubClass *klass)
 	klass_device->setup = fu_genesys_usbhub_setup;
 	klass_device->dump_firmware = fu_genesys_usbhub_dump_firmware;
 	klass_device->write_firmware = fu_genesys_usbhub_write_firmware;
-	klass_device->detach = fu_genesys_usbhub_detach;
 	klass_device->attach = fu_genesys_usbhub_attach;
 }
