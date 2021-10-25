@@ -961,6 +961,21 @@ fu_genesys_usbhub_setup(FuDevice *device, GError **error)
 		fu_device_add_instance_id(FU_DEVICE(scaler_device), instance);
 	}
 
+	if (g_getenv("FWUPD_GENESYS_USBHUB_VERBOSE") != NULL) {
+		g_debug("flash_erase_delay: %u", self->flash_erase_delay);
+		g_debug("flash_write_delay: %u", self->flash_write_delay);
+		g_debug("flash_rw_size: 0x%x", self->flash_rw_size);
+		g_debug("support_fw_recovery: %s",
+			self->support_fw_recovery ? "yes" : "no");
+		g_debug("fw_bank[%d]: addr: @%04X, vers: %04X", 0,
+			self->fw_bank_addr[0], self->fw_bank_vers[0]);
+		if (self->support_fw_recovery)
+			g_debug("fw_bank[%d]: addr: @%04X, vers: %04X", 1,
+				self->fw_bank_addr[1], self->fw_bank_vers[1]);
+		g_debug("code_size: 0x%x", self->code_size);
+		g_debug("fw_data_total_count: 0x%x", self->fw_data_total_count);
+		g_debug("extend_size: 0x%x", self->extend_size);
+	}
 #else
 	g_set_error(error,
 		    FWUPD_ERROR,
