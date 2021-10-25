@@ -427,7 +427,7 @@ fu_genesys_usbhub_set_isp_mode(FuGenesysUsbhub *self, IspMode mode, GError **err
 	helper.expected_val = 0;
 	if (!fu_device_retry(FU_DEVICE(self),
 			     fu_genesys_usbhub_wait_flash_status_register_cb,
-			     5,
+			     self->flash_write_delay / 30,
 			     &helper,
 			     error)) {
 		g_prefix_error(error, "error setting isp mode: ");
