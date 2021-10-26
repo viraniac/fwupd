@@ -11,6 +11,7 @@ shared_module('fu_plugin_genesys',
   fu_hash,
   sources : [
     'fu-genesys-firmware.c',
+    'fu-genesys-scaler.c',
     'fu-genesys-usbhub.c',
     'fu-plugin-genesys.c',
   ],

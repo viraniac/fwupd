@@ -13,6 +13,7 @@
 
 #include "fu-genesys-common.h"
 #include "fu-genesys-flash-info-table.h"
+#include "fu-genesys-scaler.h"
 #include "fu-genesys-usbhub.h"
 
 #define GENESYS_USBHUB_STATIC_TOOL_DESC_IDX_USB_3_0  0x84
@@ -926,6 +927,20 @@ fu_genesys_usbhub_setup(FuDevice *device, GError **error)
 	if (self->support_fw_recovery)
 		if (!fu_genesys_usbhub_get_fw_version(self, 1, error))
 			return FALSE;
+
+	/* Have MStar scaler */
+	if (g_ascii_xdigit_value(self->vendor_support_tool_info.mstar_scaler) == 2) {
+		FuContext *ctx = fu_device_get_context(device);
+		const gchar *instance = "MStar-MSB9100";
+		FuGenesysScaler *scaler_device;
+
+		scaler_device = fu_genesys_scaler_new();
+		fu_device_set_context(FU_DEVICE(scaler_device), ctx);
+		fu_device_add_guid(FU_DEVICE(scaler_device), fwupd_guid_hash_string(instance));
+		fu_device_add_child(device, FU_DEVICE(scaler_device));
+		fu_device_add_instance_id(FU_DEVICE(scaler_device), instance);
+	}
+
 #else
 	g_set_error(error,
 		    FWUPD_ERROR,
