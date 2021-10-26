@@ -868,7 +868,7 @@ fu_genesys_usbhub_setup(FuDevice *device, GError **error)
 	 * Device-specific configuration.
 	 * [TODO]: Consider moving these to the quirk file.
 	 */
-	if (self->vendor_support_tool_info.hp_proprietary) {
+	if (g_ascii_xdigit_value(self->vendor_support_tool_info.hp_proprietary)) {
 		self->vcs.req_switch = GENESYS_USBHUB_CS_ISP_SW;
 		self->vcs.req_read = GENESYS_USBHUB_CS_ISP_READ;
 		self->vcs.req_write = GENESYS_USBHUB_CS_ISP_WRITE;
