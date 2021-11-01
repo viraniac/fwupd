@@ -14,6 +14,15 @@
 #include "fu-genesys-common.h"
 #include "fu-genesys-scaler.h"
 
+#define GENESYS_SCALER_MSTAR_READ  0x7d
+#define GENESYS_SCALER_MSTAR_WRITE 0x7e
+
+#define GENESYS_SCALER_CMD_DATA_WRITE 0x10
+#define GENESYS_SCALER_CMD_DATA_READ  0x11
+#define GENESYS_SCALER_CMD_DATA_END   0x12
+
+#define GENESYS_SCALER_FLASH_CONTROL_READ          0x03
+
 #define GENESYS_SCALER_INFO 0xA4
 
 #define GENESYS_SCALER_USB_TIMEOUT 5000 /* ms */
@@ -153,6 +162,119 @@ fu_genesys_scaler_get_public_key(FuGenesysScaler *self,
 }
 
 static gboolean
+fu_genesys_scaler_read_flash(FuGenesysScaler *self,
+			     guint start_addr,
+			     guint8 *buf,
+			     guint len,
+			     GError **error)
+{
+	FuDevice *parent_device = fu_device_get_parent(FU_DEVICE(self));
+	GUsbDevice *usb_device = fu_usb_device_get_dev(FU_USB_DEVICE(parent_device));
+	guint8 data1[] = {
+		GENESYS_SCALER_CMD_DATA_WRITE,
+		GENESYS_SCALER_FLASH_CONTROL_READ,
+		(start_addr & 0x00ff0000) >> 16,
+		(start_addr & 0x0000ff00) >> 8,
+		(start_addr & 0x000000ff),
+	};
+	guint8 data2[] = {
+		GENESYS_SCALER_CMD_DATA_READ,
+	};
+	guint8 data3[] = {
+		GENESYS_SCALER_CMD_DATA_END,
+	};
+	const guint flash_rw_size = 64;
+	guint addr = start_addr;
+	guint count = 0;
+
+	/*
+	 * S + 0x92 + 0x10 + 0x03 + addr1 + addr2 + addr3 + P
+	 * S + 0x92 + 0x11
+	 * S + 0x93 + (read) data1 + data2 + data3 + ... + data1024 + P
+	 * S + 0x92 + 0x12 + P
+	 */
+	if (!g_usb_device_control_transfer(usb_device,
+					   G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE,
+					   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
+					   G_USB_DEVICE_RECIPIENT_DEVICE,
+					   GENESYS_SCALER_MSTAR_WRITE,
+					   0x0000,		/* value */
+					   0x0000,		/* idx */
+					   data1,		/* data */
+					   sizeof(data1),	/* data length */
+					   NULL,		/* actual length */
+					   (guint)GENESYS_SCALER_USB_TIMEOUT,
+					   NULL,
+					   error)) {
+		g_prefix_error(error, "error reading flash at @%0x: ",
+			       start_addr);
+		return FALSE;
+	}
+
+	if (!g_usb_device_control_transfer(usb_device,
+					   G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE,
+					   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
+					   G_USB_DEVICE_RECIPIENT_DEVICE,
+					   GENESYS_SCALER_MSTAR_WRITE,
+					   0x0000,		/* value */
+					   0x0000,		/* idx */
+					   data2,		/* data */
+					   sizeof(data2),	/* data length */
+					   NULL,		/* actual length */
+					   (guint)GENESYS_SCALER_USB_TIMEOUT,
+					   NULL,
+					   error)) {
+		g_prefix_error(error, "error reading flash at @%0x: ",
+			       start_addr);
+		return FALSE;
+	}
+
+	while (count < len) {
+		int transfer_len = ((len - count) < flash_rw_size) ? len - count
+								   : flash_rw_size;
+		if (!g_usb_device_control_transfer(usb_device,
+						   G_USB_DEVICE_DIRECTION_DEVICE_TO_HOST,
+						   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
+						   G_USB_DEVICE_RECIPIENT_DEVICE,
+						   GENESYS_SCALER_MSTAR_READ,
+						   0x0000,		/* value */
+						   0x0000,		/* idx */
+						   buf + count,		/* data */
+						   transfer_len,	/* data length */
+						   NULL,		/* actual length */
+						   (guint)GENESYS_SCALER_USB_TIMEOUT,
+						   NULL,
+						   error)) {
+			g_prefix_error(error, "error reading flash at @%0x: ",
+				       addr);
+			return FALSE;
+		}
+
+		count += transfer_len;
+	}
+
+	if (!g_usb_device_control_transfer(usb_device,
+					   G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE,
+					   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
+					   G_USB_DEVICE_RECIPIENT_DEVICE,
+					   GENESYS_SCALER_MSTAR_WRITE,
+					   0x0000,		/* value */
+					   0x0000,		/* idx */
+					   data3,		/* data */
+					   sizeof(data3),	/* data length */
+					   NULL,		/* actual length */
+					   (guint)GENESYS_SCALER_USB_TIMEOUT,
+					   NULL,
+					   error)) {
+		g_prefix_error(error, "error reading flash at @%0x: ",
+			       start_addr);
+		return FALSE;
+	}
+
+	return TRUE;
+}
+
+static gboolean
 fu_genesys_scaler_probe(FuDevice *device, GError **error)
 {
 	FuGenesysScaler *self = FU_GENESYS_SCALER(device);
@@ -193,6 +315,37 @@ fu_genesys_scaler_probe(FuDevice *device, GError **error)
 	return TRUE;
 }
 
+static gboolean
+fu_genesys_scaler_open(FuDevice *device, GError **error)
+{
+	FuDevice *parent_device = fu_device_get_parent(device);
+
+	return fu_device_open(parent_device, error);
+}
+
+static gboolean
+fu_genesys_scaler_close(FuDevice *device, GError **error)
+{
+	FuDevice *parent_device = fu_device_get_parent(device);
+
+	return fu_device_open(parent_device, error);
+}
+
+static GBytes *
+fu_genesys_scaler_dump_firmware(FuDevice *device, FuProgress *progress, GError **error)
+{
+	FuGenesysScaler *self = FU_GENESYS_SCALER(device);
+	g_autofree guint8 *buf = NULL;
+	gsize size = 0x6000;
+	guint addr = 0x0000;
+
+	buf = g_malloc0(size);
+	if (!fu_genesys_scaler_read_flash(self, addr, buf, size, error))
+		return NULL;
+
+	return g_bytes_new_take(g_steal_pointer(&buf), size);
+}
+
 static void
 fu_genesys_scaler_init(FuGenesysScaler *self)
 {
@@ -204,6 +357,9 @@ fu_genesys_scaler_class_init(FuGenesysScalerClass *klass)
 {
 	FuDeviceClass *klass_device = FU_DEVICE_CLASS(klass);
 	klass_device->probe = fu_genesys_scaler_probe;
+	klass_device->open = fu_genesys_scaler_open;
+	klass_device->close = fu_genesys_scaler_close;
+	klass_device->dump_firmware = fu_genesys_scaler_dump_firmware;
 }
 
 FuGenesysScaler *
