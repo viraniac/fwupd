@@ -59,6 +59,370 @@ struct _FuGenesysScaler {
 G_DEFINE_TYPE(FuGenesysScaler, fu_genesys_scaler, FU_TYPE_DEVICE)
 
 static gboolean
+fu_genesys_scaler_enter_serial_debug_mode(FuGenesysScaler *self, GError **error)
+{
+	FuDevice *parent_device = fu_device_get_parent(FU_DEVICE(self));
+	GUsbDevice *usb_device = fu_usb_device_get_dev(FU_USB_DEVICE(parent_device));
+	guint8 data[] = { 0x53, 0x45, 0x52, 0x44, 0x42 };
+
+	if (!g_usb_device_control_transfer(usb_device,
+					   G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE,
+					   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
+					   G_USB_DEVICE_RECIPIENT_DEVICE,
+					   GENESYS_SCALER_MSTAR_WRITE,
+					   0x0001,		/* value */
+					   0x0000,		/* idx */
+					   data,		/* data */
+					   sizeof(data),	/* data length */
+					   NULL,		/* actual length */
+					   (guint)GENESYS_SCALER_USB_TIMEOUT,
+					   NULL,
+					   error)) {
+		g_prefix_error(error, "error entering Serial Debug Mode: ");
+		return FALSE;
+	}
+
+	g_usleep(1000); /* 1 ms */
+
+	return TRUE;
+}
+
+static gboolean
+fu_genesys_scaler_enter_single_step_mode(FuGenesysScaler *self, GError **error)
+{
+	FuDevice *parent_device = fu_device_get_parent(FU_DEVICE(self));
+	GUsbDevice *usb_device = fu_usb_device_get_dev(FU_USB_DEVICE(parent_device));
+	guint8 data1[] = { 0x10, 0xc0, 0xc1, 0x53 };
+	guint8 data2[] = { 0x10, 0x1f, 0xc1, 0x53 };
+
+	if (!g_usb_device_control_transfer(usb_device,
+					   G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE,
+					   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
+					   G_USB_DEVICE_RECIPIENT_DEVICE,
+					   GENESYS_SCALER_MSTAR_WRITE,
+					   0x0001,		/* value */
+					   0x0000,		/* idx */
+					   data1,		/* data */
+					   sizeof(data1),	/* data length */
+					   NULL,		/* actual length */
+					   (guint)GENESYS_SCALER_USB_TIMEOUT,
+					   NULL,
+					   error)) {
+		g_prefix_error(error, "error entering Single Step Mode: ");
+		return FALSE;
+	}
+
+	if (!g_usb_device_control_transfer(usb_device,
+					   G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE,
+					   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
+					   G_USB_DEVICE_RECIPIENT_DEVICE,
+					   GENESYS_SCALER_MSTAR_WRITE,
+					   0x0001,		/* value */
+					   0x0000,		/* idx */
+					   data2,		/* data */
+					   sizeof(data2),	/* data length */
+					   NULL,		/* actual length */
+					   (guint)GENESYS_SCALER_USB_TIMEOUT,
+					   NULL,
+					   error)) {
+		g_prefix_error(error, "error entering Single Step Mode: ");
+		return FALSE;
+	}
+
+	return TRUE;
+}
+
+static gboolean
+fu_genesys_scaler_enter_debug_mode(FuGenesysScaler *self, GError **error)
+{
+	FuDevice *parent_device = fu_device_get_parent(FU_DEVICE(self));
+	GUsbDevice *usb_device = fu_usb_device_get_dev(FU_USB_DEVICE(parent_device));
+	guint8 data[] = { 0x10, 0x00, 0x00, 0x00, 0x00 };
+
+	if (!g_usb_device_control_transfer(usb_device,
+					   G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE,
+					   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
+					   G_USB_DEVICE_RECIPIENT_DEVICE,
+					   GENESYS_SCALER_MSTAR_WRITE,
+					   0x0001,		/* value */
+					   0x0000,		/* idx */
+					   data,		/* data */
+					   sizeof(data),	/* data length */
+					   NULL,		/* actual length */
+					   (guint)GENESYS_SCALER_USB_TIMEOUT,
+					   NULL,
+					   error)) {
+		g_prefix_error(error, "error entering Debug Mode: ");
+		return FALSE;
+	}
+
+	return TRUE;
+}
+
+static gboolean
+fu_genesys_scaler_mst_i2c_bus_ctrl(FuGenesysScaler *self, GError **error)
+{
+	FuDevice *parent_device = fu_device_get_parent(FU_DEVICE(self));
+	GUsbDevice *usb_device = fu_usb_device_get_dev(FU_USB_DEVICE(parent_device));
+	guint8 data[] = { 0x35, 0x71 };
+
+	for (guint i = 0; i < sizeof(data); i++) {
+		if (!g_usb_device_control_transfer(usb_device,
+						   G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE,
+						   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
+						   G_USB_DEVICE_RECIPIENT_DEVICE,
+						   GENESYS_SCALER_MSTAR_WRITE,
+						   0x0001,		/* value */
+						   0x0000,		/* idx */
+						   &data[i],		/* data */
+						   sizeof(data[i]),	/* data length */
+						   NULL,		/* actual length */
+						   (guint)GENESYS_SCALER_USB_TIMEOUT,
+						   NULL,
+						   error)) {
+			g_prefix_error(error, "error sending i2c bus ctrl: %02x", data[i]);
+			return FALSE;
+		}
+	}
+
+	return TRUE;
+}
+
+static gboolean
+fu_genesys_scaler_mst_i2c_bus_switch_to_ch0(FuGenesysScaler *self, GError **error)
+{
+	FuDevice *parent_device = fu_device_get_parent(FU_DEVICE(self));
+	GUsbDevice *usb_device = fu_usb_device_get_dev(FU_USB_DEVICE(parent_device));
+	guint8 data[] = { 0x80, 0x82, 0x84, 0x51, 0x7f, 0x37, 0x61 };
+
+	for (guint i = 0; i < sizeof(data); i++) {
+		if (!g_usb_device_control_transfer(usb_device,
+						   G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE,
+						   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
+						   G_USB_DEVICE_RECIPIENT_DEVICE,
+						   GENESYS_SCALER_MSTAR_WRITE,
+						   0x0001,		/* value */
+						   0x0000,		/* idx */
+						   &data[i],		/* data */
+						   sizeof(data[i]),	/* data length */
+						   NULL,		/* actual length */
+						   (guint)GENESYS_SCALER_USB_TIMEOUT,
+						   NULL,
+						   error)) {
+			g_prefix_error(error, "error sending i2c bus ch0: %02x", data[i]);
+			return FALSE;
+		}
+	}
+
+	return TRUE;
+}
+
+static gboolean
+fu_genesys_scaler_mst_i2c_bus_switch_to_ch4(FuGenesysScaler *self, GError **error)
+{
+	FuDevice *parent_device = fu_device_get_parent(FU_DEVICE(self));
+	GUsbDevice *usb_device = fu_usb_device_get_dev(FU_USB_DEVICE(parent_device));
+	guint8 data[] = { 0x80, 0x82, 0x85, 0x53, 0x7f };
+
+	for (guint i = 0; i < sizeof(data); i++) {
+		if (!g_usb_device_control_transfer(usb_device,
+						   G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE,
+						   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
+						   G_USB_DEVICE_RECIPIENT_DEVICE,
+						   GENESYS_SCALER_MSTAR_WRITE,
+						   0x0001,		/* value */
+						   0x0000,		/* idx */
+						   &data[i],		/* data */
+						   sizeof(data[i]),	/* data length */
+						   NULL,		/* actual length */
+						   (guint)GENESYS_SCALER_USB_TIMEOUT,
+						   NULL,
+						   error)) {
+			g_prefix_error(error, "error sending i2c bus ch4: %02x", data[i]);
+			return FALSE;
+		}
+	}
+
+	return TRUE;
+}
+
+static gboolean
+fu_genesys_scaler_pause_r2_cpu(FuGenesysScaler *self, GError **error)
+{
+	FuDevice *parent_device = fu_device_get_parent(FU_DEVICE(self));
+	GUsbDevice *usb_device = fu_usb_device_get_dev(FU_USB_DEVICE(parent_device));
+	guint8 data[] = { 0x10, 0x00, 0x10, 0x0F, 0xD7, 0x00 };
+
+	/*
+	 * MST9U only!
+	 *
+	 * Pause R2 CPU for preventing Scaler entering Power Saving Mode also
+	 * need for Disable SPI Flash Write Protect Mode
+	 */
+
+	if (!g_usb_device_control_transfer(usb_device,
+					   G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE,
+					   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
+					   G_USB_DEVICE_RECIPIENT_DEVICE,
+					   GENESYS_SCALER_MSTAR_WRITE,
+					   0x0003,		/* value */
+					   0x0000,		/* idx */
+					   data,		/* data */
+					   sizeof(data) - 1,	/* data length */
+					   NULL,		/* actual length */
+					   (guint)GENESYS_SCALER_USB_TIMEOUT,
+					   NULL,
+					   error)) {
+		g_prefix_error(error, "error reading register %02x%02x%02x%02x%02x: ",
+			       data[0], data[1], data[2], data[3], data[4]);
+		return FALSE;
+	}
+
+	if (!g_usb_device_control_transfer(usb_device,
+					   G_USB_DEVICE_DIRECTION_DEVICE_TO_HOST,
+					   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
+					   G_USB_DEVICE_RECIPIENT_DEVICE,
+					   GENESYS_SCALER_MSTAR_READ,
+					   0x0003,		/* value */
+					   0x0000,		/* idx */
+					   &data[5],		/* data */
+					   sizeof(data[5]),	/* data length */
+					   NULL,		/* actual length */
+					   (guint)GENESYS_SCALER_USB_TIMEOUT,
+					   NULL,
+					   error)) {
+		g_prefix_error(error, "error reading register %02x%02x%02x%02x%02x:",
+			       data[0], data[1], data[2], data[3], data[4]);
+		return FALSE;
+	}
+
+	if (data[5] == 0xff) {
+		g_prefix_error(error, "error reading register %02x%02x%02x%02x%02x: ",
+			       data[0], data[1], data[2], data[3], data[4]);
+		return FALSE;
+	}
+
+	data[5] |= 0x80;
+	if (!g_usb_device_control_transfer(usb_device,
+					   G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE,
+					   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
+					   G_USB_DEVICE_RECIPIENT_DEVICE,
+					   GENESYS_SCALER_MSTAR_WRITE,
+					   0x0003,		/* value */
+					   0x0000,		/* idx */
+					   data,		/* data */
+					   sizeof(data),	/* data length */
+					   NULL,		/* actual length */
+					   (guint)GENESYS_SCALER_USB_TIMEOUT,
+					   NULL,
+					   error)) {
+		g_prefix_error(error, "error writing register %02x%02x%02x%02x%02x: ",
+			       data[0], data[1], data[2], data[3], data[4]);
+		return FALSE;
+	}
+
+	g_usleep(200000); /* 200ms */
+
+	return TRUE;
+}
+
+static gboolean
+fu_genesys_scaler_enter_isp_mode(FuGenesysScaler *self, GError **error)
+{
+	FuDevice *parent_device = fu_device_get_parent(FU_DEVICE(self));
+	GUsbDevice *usb_device = fu_usb_device_get_dev(FU_USB_DEVICE(parent_device));
+	guint8 data[] = { 0x4d, 0x53, 0x54, 0x41, 0x52 };
+
+	/*
+	 * Enter ISP mode:
+	 *
+	 * S + 0x92 + 0x4d + 0x53 + 0x54 + 0x41 + 0x52 + P
+	 *
+	 * Note: MStar application note say execute twice to avoid race
+	 * condition
+	 */
+	if (!g_usb_device_control_transfer(usb_device,
+					   G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE,
+					   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
+					   G_USB_DEVICE_RECIPIENT_DEVICE,
+					   GENESYS_SCALER_MSTAR_WRITE,
+					   0x0000,		/* value */
+					   0x0000,		/* idx */
+					   data,		/* data */
+					   sizeof(data),	/* data length */
+					   NULL,		/* actual length */
+					   (guint)GENESYS_SCALER_USB_TIMEOUT,
+					   NULL,
+					   error)) {
+		g_usleep(1000); /* 1ms */
+
+		/* second try */
+		if (!g_usb_device_control_transfer(usb_device,
+						   G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE,
+						   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
+						   G_USB_DEVICE_RECIPIENT_DEVICE,
+						   GENESYS_SCALER_MSTAR_WRITE,
+						   0x0000,		/* value */
+						   0x0000,		/* idx */
+						   data,		/* data */
+						   sizeof(data),	/* data length */
+						   NULL,		/* actual length */
+						   (guint)GENESYS_SCALER_USB_TIMEOUT,
+						   NULL,
+						   error)) {
+			g_prefix_error(error, "error entering ISP mode: ");
+			return FALSE;
+		}
+	}
+
+	g_usleep(1000); /* 1ms */
+
+	return TRUE;
+}
+
+static gboolean
+fu_genesys_scaler_enter_isp(FuGenesysScaler *self, GError **error)
+{
+	/*
+	 * Important: do not change the order below; otherwise, unexpected
+	 * condition occurs.
+	 */
+
+	if (!fu_genesys_scaler_enter_serial_debug_mode(self, error))
+		return FALSE;
+
+	if (!fu_genesys_scaler_enter_single_step_mode(self, error))
+		return FALSE;
+
+	if (self->cpu_model == MCPU_MST9U || self->cpu_model == MCPU_TSUM_G)
+		if (!fu_genesys_scaler_mst_i2c_bus_switch_to_ch0(self, error))
+			return FALSE;
+
+	if (!fu_genesys_scaler_enter_debug_mode(self, error))
+		return FALSE;
+
+	if (!fu_genesys_scaler_mst_i2c_bus_ctrl(self, error))
+		return FALSE;
+
+	if (self->cpu_model == MCPU_MST9U) {
+		/* Turn off powersaving */
+		if (!fu_genesys_scaler_mst_i2c_bus_switch_to_ch4(self, error))
+			return FALSE;
+
+		if (!fu_genesys_scaler_mst_i2c_bus_ctrl(self, error))
+			return FALSE;
+
+		if (!fu_genesys_scaler_pause_r2_cpu(self, error))
+			return FALSE;
+	}
+
+	if (!fu_genesys_scaler_enter_isp_mode(self, error))
+		return FALSE;
+
+	return TRUE;
+}
+
+static gboolean
 fu_genesys_scaler_get_level(FuGenesysScaler *self,
 			    guint8 *level,
 			    GError **error)
@@ -338,6 +702,9 @@ fu_genesys_scaler_dump_firmware(FuDevice *device, FuProgress *progress, GError *
 	g_autofree guint8 *buf = NULL;
 	gsize size = 0x6000;
 	guint addr = 0x0000;
+
+	if (!fu_genesys_scaler_enter_isp(self, error))
+		return NULL;
 
 	buf = g_malloc0(size);
 	if (!fu_genesys_scaler_read_flash(self, addr, buf, size, error))
