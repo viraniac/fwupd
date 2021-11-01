@@ -42,7 +42,7 @@ typedef enum {
 
 struct _FuGenesysScaler {
 	FuDevice parent_instance;
-	guint8 model;
+	MStarChipID cpu_model;
 	guint8 level;
 	guint8 public_key[0x212];
 };
@@ -159,7 +159,7 @@ fu_genesys_scaler_probe(FuDevice *device, GError **error)
 	guint8 buf[0x10];
 	char *vers = (char *)buf;
 
-	self->model = MCPU_TSUM_G; /* Assuming model is TSUM_G for now */
+	self->cpu_model = MCPU_TSUM_G; /* Assuming model is TSUM_G for now */
 
 	if (!fu_genesys_scaler_get_level(self, &self->level, error))
 		return FALSE;
