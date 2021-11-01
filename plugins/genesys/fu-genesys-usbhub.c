@@ -271,6 +271,7 @@ fu_genesys_usbhub_read_flash(FuGenesysUsbhub *self,
 			g_prefix_error(error, "error reading flash at @%0x: ", addr);
 			return FALSE;
 		}
+
 		addr += transfer_len;
 		count += transfer_len;
 	}
