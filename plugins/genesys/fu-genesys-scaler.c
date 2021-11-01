@@ -21,7 +21,16 @@
 #define GENESYS_SCALER_CMD_DATA_READ  0x11
 #define GENESYS_SCALER_CMD_DATA_END   0x12
 
+#define GENESYS_SCALER_FLASH_CONTROL_WRITE_ENABLE  0x06
+#define GENESYS_SCALER_FLASH_CONTROL_WRITE_DISABLE 0x04
+#define GENESYS_SCALER_FLASH_CONTROL_READ_STATUS   0x05
+#define GENESYS_SCALER_FLASH_CONTROL_WRITE_STATUS  0x01
 #define GENESYS_SCALER_FLASH_CONTROL_READ          0x03
+#define GENESYS_SCALER_FLASH_CONTROL_FAST_READ     0x0b
+#define GENESYS_SCALER_FLASH_CONTROL_PAGE_PROGRAM  0x02
+#define GENESYS_SCALER_FLASH_CONTROL_CHIP_ERASE    0x60
+#define GENESYS_SCALER_FLASH_CONTROL_SECTOR_ERASE  0x20
+#define GENESYS_SCALER_FLASH_CONTROL_READ_ID       0x9f
 
 #define GENESYS_SCALER_INFO 0xA4
 
@@ -54,6 +63,7 @@ struct _FuGenesysScaler {
 	MStarChipID cpu_model;
 	guint8 level;
 	guint8 public_key[0x212];
+	guint8 flash_id[3];
 };
 
 G_DEFINE_TYPE(FuGenesysScaler, fu_genesys_scaler, FU_TYPE_DEVICE)
@@ -423,6 +433,115 @@ fu_genesys_scaler_enter_isp(FuGenesysScaler *self, GError **error)
 }
 
 static gboolean
+fu_genesys_scaler_query_flash_id(FuGenesysScaler *self, GError **error)
+{
+	FuDevice *parent_device = fu_device_get_parent(FU_DEVICE(self));
+	GUsbDevice *usb_device = fu_usb_device_get_dev(FU_USB_DEVICE(parent_device));
+	guint8 data1[] = {
+		GENESYS_SCALER_CMD_DATA_WRITE,
+		GENESYS_SCALER_FLASH_CONTROL_READ_ID,
+	};
+	guint8 data2[] = {
+		GENESYS_SCALER_CMD_DATA_READ,
+	};
+	guint8 data3[] = {
+		GENESYS_SCALER_CMD_DATA_END,
+	};
+	gsize actual_len;
+
+	/*
+	 * Read Flash ID:
+	 *
+	 * S + 0x92 + 0x10 + 0x9F + P
+	 * S + 0x92 + 0x11 + P
+	 * S + 0x93 + (read) Data1 + Data2 + Data3 + P
+	 * S + 0x92 + 0x12 + P
+	 */
+	if (!g_usb_device_control_transfer(usb_device,
+					   G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE,
+					   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
+					   G_USB_DEVICE_RECIPIENT_DEVICE,
+					   GENESYS_SCALER_MSTAR_WRITE,
+					   0x0000,		/* value */
+					   0x0000,		/* idx */
+					   data1,		/* data */
+					   sizeof(data1),	/* data length */
+					   NULL,		/* actual length */
+					   (guint)GENESYS_SCALER_USB_TIMEOUT,
+					   NULL,
+					   error)) {
+		g_prefix_error(error, "error getting Flash ID: ");
+		return FALSE;
+	}
+
+	if (!g_usb_device_control_transfer(usb_device,
+					   G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE,
+					   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
+					   G_USB_DEVICE_RECIPIENT_DEVICE,
+					   GENESYS_SCALER_MSTAR_WRITE,
+					   0x0000,		/* value */
+					   0x0000,		/* idx */
+					   data2,		/* data */
+					   sizeof(data2),	/* data length */
+					   NULL,		/* actual length */
+					   (guint)GENESYS_SCALER_USB_TIMEOUT,
+					   NULL,
+					   error)) {
+		g_prefix_error(error, "error getting Flash ID: ");
+		return FALSE;
+	}
+
+	if (!g_usb_device_control_transfer(usb_device,
+					   G_USB_DEVICE_DIRECTION_DEVICE_TO_HOST,
+					   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
+					   G_USB_DEVICE_RECIPIENT_DEVICE,
+					   GENESYS_SCALER_MSTAR_READ,
+					   0x0000,			/* value */
+					   0x0000,			/* idx */
+					   self->flash_id,		/* data */
+					   sizeof(self->flash_id),	/* data length */
+					   &actual_len,			/* actual length */
+					   (guint)GENESYS_SCALER_USB_TIMEOUT,
+					   NULL,
+					   error)) {
+		g_prefix_error(error, "error getting Flash ID: ");
+		return FALSE;
+	}
+
+	if (!g_usb_device_control_transfer(usb_device,
+					   G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE,
+					   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
+					   G_USB_DEVICE_RECIPIENT_DEVICE,
+					   GENESYS_SCALER_MSTAR_WRITE,
+					   0x0000,		/* value */
+					   0x0000,		/* idx */
+					   data3,		/* data */
+					   sizeof(data3),	/* data length */
+					   NULL,		/* actual length */
+					   (guint)GENESYS_SCALER_USB_TIMEOUT,
+					   NULL,
+					   error)) {
+		g_prefix_error(error, "error getting Flash ID: ");
+		return FALSE;
+	}
+
+	if (((self->flash_id[0] == 0x00) && (self->flash_id[1] == 0x00) && (self->flash_id[2] == 0x00)) ||
+	    ((self->flash_id[0] == 0xff) && (self->flash_id[1] == 0xff) && (self->flash_id[2] == 0xff))) {
+		g_set_error_literal(error,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INTERNAL,
+				    "Unknown flash chip");
+		return FALSE;
+	}
+
+	if (g_getenv("FWUPD_GENESYS_SCALER_VERBOSE") != NULL)
+		fu_common_dump_raw(G_LOG_DOMAIN, "Scaler Flash ID",
+				   self->flash_id, sizeof(self->flash_id));
+
+	return TRUE;
+}
+
+static gboolean
 fu_genesys_scaler_get_level(FuGenesysScaler *self,
 			    guint8 *level,
 			    GError **error)
@@ -704,6 +823,10 @@ fu_genesys_scaler_dump_firmware(FuDevice *device, FuProgress *progress, GError *
 	guint addr = 0x0000;
 
 	if (!fu_genesys_scaler_enter_isp(self, error))
+		return NULL;
+
+	/* [TODO] Think about moving this to the quirk file */
+	if (!fu_genesys_scaler_query_flash_id(self, error))
 		return NULL;
 
 	buf = g_malloc0(size);
