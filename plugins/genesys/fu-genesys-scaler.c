@@ -915,7 +915,7 @@ fu_genesys_scaler_dump_firmware(FuDevice *device, FuProgress *progress, GError *
 {
 	FuGenesysScaler *self = FU_GENESYS_SCALER(device);
 	g_autofree guint8 *buf = NULL;
-	gsize size = 0x6000;
+	gsize size = 0x217000; /* [TODO]: ask for real size */
 	guint addr = 0x0000;
 
 	if (!fu_genesys_scaler_enter_isp(self, error))
