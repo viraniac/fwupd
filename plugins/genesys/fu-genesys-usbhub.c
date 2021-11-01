@@ -580,6 +580,26 @@ fu_genesys_usbhub_open(FuDevice *device, GError **error)
 }
 
 static gboolean
+fu_genesys_usbhub_close(FuDevice *device, GError **error)
+{
+	GUsbDevice *usb_device = fu_usb_device_get_dev(FU_USB_DEVICE(device));
+
+	if (!g_usb_device_release_interface(usb_device,
+					    0,
+					    G_USB_DEVICE_CLAIM_INTERFACE_BIND_KERNEL_DRIVER,
+					    error)) {
+		return FALSE;
+	}
+
+	/* FuUsbDevice->close */
+	if (!FU_DEVICE_CLASS(fu_genesys_usbhub_parent_class)->close(device, error))
+		return FALSE;
+
+	/* success */
+	return TRUE;
+}
+
+static gboolean
 fu_genesys_usbhub_get_descriptor_data(GBytes *desc_bytes,
 				      guint8 *dst,
 				      guint dst_size,
@@ -1200,6 +1220,7 @@ fu_genesys_usbhub_class_init(FuGenesysUsbhubClass *klass)
 	FuDeviceClass *klass_device = FU_DEVICE_CLASS(klass);
 	klass_device->probe = fu_genesys_usbhub_probe;
 	klass_device->open = fu_genesys_usbhub_open;
+	klass_device->close = fu_genesys_usbhub_close;
 	klass_device->setup = fu_genesys_usbhub_setup;
 	klass_device->dump_firmware = fu_genesys_usbhub_dump_firmware;
 	klass_device->write_firmware = fu_genesys_usbhub_write_firmware;
