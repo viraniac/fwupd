@@ -456,7 +456,7 @@ fu_genesys_scaler_exit_isp_mode(FuGenesysScaler *self, GError **error)
 					   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
 					   G_USB_DEVICE_RECIPIENT_DEVICE,
 					   GENESYS_SCALER_MSTAR_WRITE,
-					   0x0001,		/* value */
+					   0x0000,		/* value */
 					   0x0000,		/* idx */
 					   data,		/* data */
 					   sizeof(data),	/* data length */
