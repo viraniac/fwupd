@@ -64,6 +64,7 @@ struct _FuGenesysScaler {
 	guint8 level;
 	guint8 public_key[0x212];
 	guint8 flash_id[3];
+	gboolean enable_security_wp;
 };
 
 G_DEFINE_TYPE(FuGenesysScaler, fu_genesys_scaler, FU_TYPE_DEVICE)
@@ -311,6 +312,291 @@ fu_genesys_scaler_mst_i2c_bus_switch_to_ch4(FuGenesysScaler *self, GError **erro
 }
 
 static gboolean
+fu_genesys_scaler_disable_wp(FuGenesysScaler *self, gboolean disable, GError **error)
+{
+	FuDevice *parent_device = fu_device_get_parent(FU_DEVICE(self));
+	GUsbDevice *usb_device = fu_usb_device_get_dev(FU_USB_DEVICE(parent_device));
+	guint8 data_out[] = { 0x10, 0x00 /* gpio_out_h */, 0x00 /* gpio_out_l */, 0x00 /* gpio_out_val */ };
+	guint8 data_en[] = { 0x10, 0x00 /* gpio_en_h */, 0x00 /* gpio_en_l */, 0x00 /* gpio_en_val */ };
+
+	/*
+	 * ------------------------------------------------------------------------------------------------
+	 * Chip		GPIO Out	GPIO Enable	GPIO Number		GPIO Number for Security WP
+	 * ------------------------------------------------------------------------------------------------
+	 * MST9U	0x0426[0] = 1	0x0428[0] = 0	GPIO 10
+	 * -----
+	 * TSUM_CD	0x0226[0] = 1	0x0228[0] = 0	GPIO 10			GPIO3: OUT: Reg 0x0220[3] = 1
+	 * -----								OEN:        Reg 0x0222[3] = 0
+	 * TSUM_2	0x0202[0] = 1	0x0203[0] = 0	GPIO 10
+	 * -----
+	 * TSUM_V	0x1B26[1:2] = 1	0x1B28[1:2] = 0	GPIO 11 / GPIO 12
+	 * -----
+	 * TSUM_B	0x1B26[0] = 1	0x1B28[0] = 0	GPIO 10
+	 * -----
+	 * TSUM_U	0x0200[7] = 1	0x0201[7] = 0	GPIO 07
+	 * -----
+	 * TSUM_G 	0x0434[4] = 1	0x0436[4] = 0	GPIO 04
+	 * ------------------------------------------------------------------------------------------------
+	 */
+
+	if (self->cpu_model == MCPU_TSUM_CD) {
+		if (self->enable_security_wp) {
+			data_out[1] = 0x02;
+			data_out[2] = 0x20;
+			data_en[1] = 0x02;
+			data_en[2] = 0x22;
+		} else {
+			data_out[1] = 0x02;
+			data_out[2] = 0x26;
+			data_en[1] = 0x02;
+			data_en[2] = 0x28;
+		}
+	} else if (self->cpu_model == MCPU_TSUM_U) {
+		data_out[1] = 0x02;
+		data_out[2] = 0x00;
+		data_en[1] = 0x02;
+		data_en[2] = 0x01;
+	} else if ((self->cpu_model == MCPU_TSUM_V) ||
+		   (self->cpu_model == MCPU_TSUM_B)) {
+		data_out[1] = 0x1B;
+		data_out[2] = 0x26;
+		data_en[1] = 0x1B;
+		data_en[2] = 0x28;
+	} else if (self->cpu_model == MCPU_TSUM_G_MSB6010) {
+		data_out[1] = 0x04;
+		data_out[2] = 0x34;
+		data_en[1] = 0x04;
+		data_en[2] = 0x36;
+	} else if (self->cpu_model == MSB6010) {
+		data_out[1] = 0x04;
+		data_out[2] = 0x41;
+		data_en[1] = 0x04;
+		data_en[2] = 0x45;
+	} else if (self->cpu_model == MCPU_TSUM_C) {
+		data_out[1] = 0x02;
+		data_out[2] = 0x26;
+		data_en[1] = 0x02;
+		data_en[2] = 0x28;
+	} else if (self->cpu_model == MCPU_TSUM_2) {
+		data_out[1] = 0x02;
+		data_out[2] = 0x02;
+		data_en[1] = 0x02;
+		data_en[2] = 0x03;
+	} else {
+		data_out[1] = 0x04;
+		data_out[2] = 0x26;
+		data_en[1] = 0x04;
+		data_en[2] = 0x28;
+	}
+
+	/*
+	 * Disable Write Protect [Out]
+	 */
+
+	/* Read GPIO-Out Register */
+	if (!g_usb_device_control_transfer(usb_device,
+					   G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE,
+					   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
+					   G_USB_DEVICE_RECIPIENT_DEVICE,
+					   GENESYS_SCALER_MSTAR_WRITE,
+					   0x0003,			/* value */
+					   0x0000,			/* idx */
+					   data_out,			/* data */
+					   sizeof(data_out) - 1,	/* data length */
+					   NULL,			/* actual length */
+					   (guint)GENESYS_SCALER_USB_TIMEOUT,
+					   NULL,
+					   error)) {
+		g_prefix_error(error, "error reading GPIO-Out Register %02x%02x: ",
+			       data_out[1], data_out[2]);
+		return FALSE;
+	}
+
+	if (!g_usb_device_control_transfer(usb_device,
+					   G_USB_DEVICE_DIRECTION_DEVICE_TO_HOST,
+					   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
+					   G_USB_DEVICE_RECIPIENT_DEVICE,
+					   GENESYS_SCALER_MSTAR_READ,
+					   0x0003,			/* value */
+					   0x0000,			/* idx */
+					   &data_out[3],		/* data */
+					   sizeof(data_out[3]),		/* data length */
+					   NULL,			/* actual length */
+					   (guint)GENESYS_SCALER_USB_TIMEOUT,
+					   NULL,
+					   error)) {
+		g_prefix_error(error, "error reading GPIO-Out Register %02x%02x: ",
+			       data_out[1], data_out[2]);
+		return FALSE;
+	}
+
+	if (data_out[3] == 0xff) {
+		g_prefix_error(error, "error reading GPIO-Out Register %02x%02x: ",
+			       data_out[1], data_out[2]);
+		return FALSE;
+	}
+
+	/* Write GPIO-Out Register */
+	if (self->cpu_model == MCPU_TSUM_CD) {
+		if (self->enable_security_wp) {
+			if (disable)
+				data_out[3] |= 0x0a; /* Pull High */
+			else
+				data_out[3] &= 0xf5; /* Pull Low */
+		} else {
+			if (disable)
+				data_out[3] |= 0x01; /* Pull High */
+			else
+				data_out[3] &= 0xfe; /* Pull Low */
+		}
+	} else if (self->cpu_model == MCPU_TSUM_U) {
+		if (self->enable_security_wp) {
+			if (disable)
+				data_out[3] |= 0x21; /* Pull High */
+			else
+				data_out[3] &= 0xde; /* Pull Low */
+		} else {
+			if (disable)
+				data_out[3] |= 0x80; /* Pull High */
+			else
+				data_out[3] &= 0x7f; /* Pull Low */
+		}
+	} else if (self->cpu_model == MCPU_TSUM_V) {
+		if (disable)
+			data_out[3] |= 0x06; /* Pull High */
+		else
+			data_out[3] &= 0xf9; /* Pull Low */
+	} else if (self->cpu_model == MCPU_TSUM_G_MSB6010) {
+		if (disable)
+			data_out[3] |= 0x10; /* Pull High */
+		else
+			data_out[3] &= 0xef; /* Pull Low */
+	} else if (self->cpu_model == MSB6010) {
+		if (disable)
+			data_out[3] |= 0x04; /* Pull High */
+		else
+			data_out[3] &= 0xfb; /* Pull Low */
+	} else if (self->cpu_model == MCPU_TSUM_G ||
+		   self->cpu_model == MCPU_TSUM_F) {
+		if (disable)
+			data_out[3] |= 0x01; /* Pull Low */
+		else
+			data_out[3] &= 0xff; /* TODO: 0xfe? Pull Low */
+	} else {
+		if (disable)
+			data_out[3] |= 0x01; /* Pull High */
+		else
+			data_out[3] &= 0xfe; /* Pull Low */
+	}
+
+	if (!g_usb_device_control_transfer(usb_device,
+					   G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE,
+					   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
+					   G_USB_DEVICE_RECIPIENT_DEVICE,
+					   GENESYS_SCALER_MSTAR_WRITE,
+					   0x0001,			/* value */
+					   0x0000,			/* idx */
+					   data_out,			/* data */
+					   sizeof(data_out),		/* data length */
+					   NULL,			/* actual length */
+					   (guint)GENESYS_SCALER_USB_TIMEOUT,
+					   NULL,
+					   error)) {
+		g_prefix_error(error, "error writing GPIO-Out Register %02x%02x=%02x: ",
+			       data_out[1], data_out[2], data_out[3]);
+		return FALSE;
+	}
+
+	/*
+	 * Disable Write Protect [Output Enable]
+	 */
+
+	/* Read GPIO-Enable Register */
+	if (!g_usb_device_control_transfer(usb_device,
+					   G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE,
+					   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
+					   G_USB_DEVICE_RECIPIENT_DEVICE,
+					   GENESYS_SCALER_MSTAR_WRITE,
+					   0x0003,			/* value */
+					   0x0000,			/* idx */
+					   data_en,			/* data */
+					   sizeof(data_en) - 1,		/* data length */
+					   NULL,			/* actual length */
+					   (guint)GENESYS_SCALER_USB_TIMEOUT,
+					   NULL,
+					   error)) {
+		g_prefix_error(error, "error writing GPIO-Enable Register %02x%02x: ",
+			       data_en[1], data_en[2]);
+		return FALSE;
+	}
+
+	if (!g_usb_device_control_transfer(usb_device,
+					   G_USB_DEVICE_DIRECTION_DEVICE_TO_HOST,
+					   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
+					   G_USB_DEVICE_RECIPIENT_DEVICE,
+					   GENESYS_SCALER_MSTAR_READ,
+					   0x0003,			/* value */
+					   0x0000,			/* idx */
+					   &data_en[3],			/* data */
+					   sizeof(data_en[3]),		/* data length */
+					   NULL,			/* actual length */
+					   (guint)GENESYS_SCALER_USB_TIMEOUT,
+					   NULL,
+					   error)) {
+		g_prefix_error(error, "error reading GPIO-Out Register %02x%02x: ",
+			       data_en[1], data_en[2]);
+		return FALSE;
+	}
+
+	if (data_en[3] == 0xff) {
+		g_prefix_error(error, "error reading GPIO-Enable Register %02x%02x: ",
+			       data_en[1], data_en[2]);
+		return FALSE;
+	}
+
+	if (self->cpu_model == MCPU_TSUM_CD) {
+		if (self->enable_security_wp)
+			data_en[3] &= 0xf5;
+		else
+			data_en[3] &= 0xfe;
+	} else if (self->cpu_model == MCPU_TSUM_U) {
+		if (self->enable_security_wp)
+			data_en[3] &= 0xde;
+		else
+			data_en[3] &= 0x7f;
+	} else if (self->cpu_model == MCPU_TSUM_V) {
+		data_en[3] &= 0xf9;
+	} else if (self->cpu_model == MCPU_TSUM_G_MSB6010) {
+		data_en[3] &= 0xef;
+	} else if (self->cpu_model == MSB6010) {
+		data_en[3] &= 0xfb;
+	} else {
+		data_en[3] &= 0xfe;
+	}
+
+	/* Write GPIO-Enable Register */
+	if (!g_usb_device_control_transfer(usb_device,
+					   G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE,
+					   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
+					   G_USB_DEVICE_RECIPIENT_DEVICE,
+					   GENESYS_SCALER_MSTAR_WRITE,
+					   0x0001,		/* value */
+					   0x0000,		/* idx */
+					   data_en,		/* data */
+					   sizeof(data_en),	/* data length */
+					   NULL,		/* actual length */
+					   (guint)GENESYS_SCALER_USB_TIMEOUT,
+					   NULL,
+					   error)) {
+		g_prefix_error(error, "error writing GPIO-Enable Register %02x%02x=%02x: ",
+			       data_en[1], data_en[2], data_en[3]);
+		return FALSE;
+	}
+
+	return TRUE;
+}
+
+static gboolean
 fu_genesys_scaler_pause_r2_cpu(FuGenesysScaler *self, GError **error)
 {
 	FuDevice *parent_device = fu_device_get_parent(FU_DEVICE(self));
@@ -495,6 +781,9 @@ fu_genesys_scaler_enter_isp(FuGenesysScaler *self, GError **error)
 	if (!fu_genesys_scaler_mst_i2c_bus_ctrl(self, error))
 		return FALSE;
 
+	if (!fu_genesys_scaler_disable_wp(self, TRUE, error))
+		return FALSE;
+
 	if (self->cpu_model == MCPU_MST9U) {
 		/* Turn off powersaving */
 		if (!fu_genesys_scaler_mst_i2c_bus_switch_to_ch4(self, error))
@@ -516,6 +805,12 @@ fu_genesys_scaler_enter_isp(FuGenesysScaler *self, GError **error)
 static gboolean
 fu_genesys_scaler_exit(FuGenesysScaler *self, GError **error)
 {
+	/* [TODO]: CLI: commented in source */
+#if 0
+	if (!fu_genesys_scaler_disable_wp(self, FALSE, error))
+		return FALSE;
+#endif
+
 	if (!fu_genesys_scaler_exit_single_step_mode(self, error))
 		return FALSE;
 
