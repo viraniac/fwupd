@@ -98,6 +98,33 @@ fu_genesys_scaler_enter_serial_debug_mode(FuGenesysScaler *self, GError **error)
 }
 
 static gboolean
+fu_genesys_scaler_exit_serial_debug_mode(FuGenesysScaler *self, GError **error)
+{
+	FuDevice *parent_device = fu_device_get_parent(FU_DEVICE(self));
+	GUsbDevice *usb_device = fu_usb_device_get_dev(FU_USB_DEVICE(parent_device));
+	guint8 data[] = { 0x45 };
+
+	if (!g_usb_device_control_transfer(usb_device,
+					   G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE,
+					   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
+					   G_USB_DEVICE_RECIPIENT_DEVICE,
+					   GENESYS_SCALER_MSTAR_WRITE,
+					   0x0001,		/* value */
+					   0x0000,		/* idx */
+					   data,		/* data */
+					   sizeof(data),	/* data length */
+					   NULL,		/* actual length */
+					   (guint)GENESYS_SCALER_USB_TIMEOUT,
+					   NULL,
+					   error)) {
+		g_prefix_error(error, "error exiting Serial Debug Mode: ");
+		return FALSE;
+	}
+
+	return TRUE;
+}
+
+static gboolean
 fu_genesys_scaler_enter_single_step_mode(FuGenesysScaler *self, GError **error)
 {
 	FuDevice *parent_device = fu_device_get_parent(FU_DEVICE(self));
@@ -136,6 +163,33 @@ fu_genesys_scaler_enter_single_step_mode(FuGenesysScaler *self, GError **error)
 					   NULL,
 					   error)) {
 		g_prefix_error(error, "error entering Single Step Mode: ");
+		return FALSE;
+	}
+
+	return TRUE;
+}
+
+static gboolean
+fu_genesys_scaler_exit_single_step_mode(FuGenesysScaler *self, GError **error)
+{
+	FuDevice *parent_device = fu_device_get_parent(FU_DEVICE(self));
+	GUsbDevice *usb_device = fu_usb_device_get_dev(FU_USB_DEVICE(parent_device));
+	guint8 data[] = { 0x10, 0xc0, 0xc1, 0xff };
+
+	if (!g_usb_device_control_transfer(usb_device,
+					   G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE,
+					   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
+					   G_USB_DEVICE_RECIPIENT_DEVICE,
+					   GENESYS_SCALER_MSTAR_WRITE,
+					   0x0001,		/* value */
+					   0x0000,		/* idx */
+					   data,		/* data */
+					   sizeof(data),	/* data length */
+					   NULL,		/* actual length */
+					   (guint)GENESYS_SCALER_USB_TIMEOUT,
+					   NULL,
+					   error)) {
+		g_prefix_error(error, "error exiting Single Step Mode: ");
 		return FALSE;
 	}
 
@@ -391,6 +445,33 @@ fu_genesys_scaler_enter_isp_mode(FuGenesysScaler *self, GError **error)
 }
 
 static gboolean
+fu_genesys_scaler_exit_isp_mode(FuGenesysScaler *self, GError **error)
+{
+	FuDevice *parent_device = fu_device_get_parent(FU_DEVICE(self));
+	GUsbDevice *usb_device = fu_usb_device_get_dev(FU_USB_DEVICE(parent_device));
+	guint8 data[] = { 0x24 };
+
+	if (!g_usb_device_control_transfer(usb_device,
+					   G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE,
+					   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
+					   G_USB_DEVICE_RECIPIENT_DEVICE,
+					   GENESYS_SCALER_MSTAR_WRITE,
+					   0x0001,		/* value */
+					   0x0000,		/* idx */
+					   data,		/* data */
+					   sizeof(data),	/* data length */
+					   NULL,		/* actual length */
+					   (guint)GENESYS_SCALER_USB_TIMEOUT,
+					   NULL,
+					   error)) {
+		g_prefix_error(error, "error exiting ISP mode: ");
+		return FALSE;
+	}
+
+	return TRUE;
+}
+
+static gboolean
 fu_genesys_scaler_enter_isp(FuGenesysScaler *self, GError **error)
 {
 	/*
@@ -427,6 +508,21 @@ fu_genesys_scaler_enter_isp(FuGenesysScaler *self, GError **error)
 	}
 
 	if (!fu_genesys_scaler_enter_isp_mode(self, error))
+		return FALSE;
+
+	return TRUE;
+}
+
+static gboolean
+fu_genesys_scaler_exit(FuGenesysScaler *self, GError **error)
+{
+	if (!fu_genesys_scaler_exit_single_step_mode(self, error))
+		return FALSE;
+
+	if (!fu_genesys_scaler_exit_serial_debug_mode(self, error))
+		return FALSE;
+
+	if (!fu_genesys_scaler_exit_isp_mode(self, error))
 		return FALSE;
 
 	return TRUE;
@@ -827,13 +923,20 @@ fu_genesys_scaler_dump_firmware(FuDevice *device, FuProgress *progress, GError *
 
 	/* [TODO] Think about moving this to the quirk file */
 	if (!fu_genesys_scaler_query_flash_id(self, error))
-		return NULL;
+		goto error;
 
 	buf = g_malloc0(size);
 	if (!fu_genesys_scaler_read_flash(self, addr, buf, size, error))
+		goto error;
+
+	if (!fu_genesys_scaler_exit(self, error))
 		return NULL;
 
 	return g_bytes_new_take(g_steal_pointer(&buf), size);
+
+error:
+	fu_genesys_scaler_exit(self, error);
+	return NULL;
 }
 
 static void
