@@ -857,35 +857,29 @@ static gboolean
 fu_genesys_scaler_probe(FuDevice *device, GError **error)
 {
 	FuGenesysScaler *self = FU_GENESYS_SCALER(device);
-	guint8 buf[0x10];
-	char *vers = (char *)buf;
-
+	guint8 version[0x10] = {0};
 	self->cpu_model = MCPU_TSUM_G; /* Assuming model is TSUM_G for now */
 
 	if (!fu_genesys_scaler_get_level(self, &self->level, error))
 		return FALSE;
 
-	if (!fu_genesys_scaler_get_version(self, buf, sizeof(buf), error))
+	if (!fu_genesys_scaler_get_version(self, version, sizeof(version), error))
 		return FALSE;
-	vers[10] = 0;
-	vers++;
+	version[10] = 0;
 
 	if (!fu_genesys_scaler_get_public_key(self, self->public_key,
 					      sizeof(self->public_key), error))
 		return FALSE;
 
-	fu_device_set_id(device, "Scaler");
-	fu_device_set_name(device, "MStar MSB9100");
-	fu_device_set_version(device, vers);
+	fu_device_set_version(device, (gchar *)&version[1]);
 	fu_device_set_version_format(device, FWUPD_VERSION_FORMAT_PLAIN);
-	fu_device_add_vendor_id(device, "MStar");
+	fu_device_set_logical_id(device, "scaler");
 	fu_device_add_flag(device, FWUPD_DEVICE_FLAG_UPDATABLE);
-	fu_device_add_protocol(device, "com.genesys.scaler");
 
 	if (g_getenv("FWUPD_GENESYS_SCALER_VERBOSE") != NULL) {
 		fu_common_dump_raw(G_LOG_DOMAIN, "level", &self->level,
 				   sizeof(self->level));
-		fu_common_dump_raw(G_LOG_DOMAIN, "version", (guint8 *)vers,
+		fu_common_dump_raw(G_LOG_DOMAIN, "version", &version[1],
 				   10);
 		fu_common_dump_raw(G_LOG_DOMAIN, "public-key",
 				   self->public_key, sizeof(self->public_key));

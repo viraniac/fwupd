@@ -951,14 +951,19 @@ fu_genesys_usbhub_setup(FuDevice *device, GError **error)
 	/* Have MStar scaler */
 	if (g_ascii_xdigit_value(self->vendor_support_tool_info.mstar_scaler) == 2) {
 		FuContext *ctx = fu_device_get_context(device);
-		const gchar *instance = "MStar-MSB9100";
 		FuGenesysScaler *scaler_device;
+		GPtrArray *ids = fu_device_get_instance_ids(device);
+		const gchar *id0 = g_ptr_array_index(ids, 0);
+		g_autofree gchar *scaler_instance_id = NULL;
 
 		scaler_device = fu_genesys_scaler_new();
 		fu_device_set_context(FU_DEVICE(scaler_device), ctx);
-		fu_device_add_guid(FU_DEVICE(scaler_device), fwupd_guid_hash_string(instance));
+		fu_device_set_vendor(FU_DEVICE(scaler_device), "MStar");
+		fu_device_set_name(FU_DEVICE(scaler_device), "MSB9100");
+		scaler_instance_id = g_strdup_printf("%s_MSB9100", id0);
+		fu_device_add_instance_id(FU_DEVICE(scaler_device), scaler_instance_id);
+		fu_device_add_protocol(FU_DEVICE(scaler_device), "com.mstarsemi.scaler");
 		fu_device_add_child(device, FU_DEVICE(scaler_device));
-		fu_device_add_instance_id(FU_DEVICE(scaler_device), instance);
 	}
 
 	if (g_getenv("FWUPD_GENESYS_USBHUB_VERBOSE") != NULL) {
