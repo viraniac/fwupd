@@ -36,6 +36,65 @@
 
 #define GENESYS_SCALER_USB_TIMEOUT 5000 /* ms */
 
+#define MTK_RSA_HEADER	"MTK_RSA_HEADER"
+
+typedef struct __attribute__((packed)) {
+	guint8 default_head[14];
+	guint8 reserved_0e_0f[2];
+	guint8 model_name[16];
+	guint8 reserved_20;
+	guint8 size[2];
+	guint8 reserved_23_27[5];
+	guint8 scaler_group[10];
+	guint8 reserved_32_53[34];
+	guint8 panel_type[10];
+	guint8 scaler_packet_date[8];
+	guint8 reserved_66_67[2];
+	guint8 scaler_packet_version[4];
+	guint8 reserved_6c_7f[20];
+	union {
+		guint8 r8;
+		struct {
+			guint8 decrypt_mode : 1;
+			guint8 second_image : 1;
+			guint8 dual_image_turn : 1;
+			guint8 special_protect_sector : 1;
+			guint8 hawk_bypass_mode : 1;
+			guint8 boot_code_size_in_header : 1;
+			guint8 reserved_6_7 : 2;
+		} __attribute__((packed)) bits;
+	} configuration_setting;
+	guint8 reserved_81_85[5];
+	guint8 second_image_program_addr[4];
+	guint8 scaler_public_key_addr[4];
+	union {
+		guint32 r32;
+		struct {
+			guint8 addr_low[2];
+			guint8 addr_high : 4;
+			guint8 size : 4;
+		} __attribute__((packed)) area;
+	} protect_sector[2];
+	guint32 boot_code_size;
+} MTKRSAHeader;
+
+typedef union __attribute__((packed)) {
+	guint8 raw[0x312];
+	struct {
+		struct __attribute__((packed)) {
+			guint8 N[0x206];
+			guint8 E[0x00c];
+		} public_key;
+		MTKRSAHeader header;
+	} data;
+} MTKFooter;
+
+/* [TODO]: Move to fu-genesys-common.h */
+typedef struct {
+	guint8 reg;
+	guint8 expected_val;
+} WaitFlashRegisterHelper;
+
 typedef enum {
 	MCPU_NONE,
 	MCPU_TSUM_V,
@@ -1151,6 +1210,454 @@ fu_genesys_scaler_read_flash(FuGenesysScaler *self,
 }
 
 static gboolean
+fu_genesys_scaler_wait_flash_control_register_cb(FuDevice *dev,
+						 gpointer user_data,
+						 GError **error)
+{
+	FuGenesysScaler *self = FU_GENESYS_SCALER(dev);
+	FuDevice *parent_device = fu_device_get_parent(FU_DEVICE(self));
+	GUsbDevice *usb_device = fu_usb_device_get_dev(FU_USB_DEVICE(parent_device));
+	WaitFlashRegisterHelper *helper = user_data;
+	guint8 status = 0;
+
+	if (!g_usb_device_control_transfer(usb_device,
+					   G_USB_DEVICE_DIRECTION_DEVICE_TO_HOST,
+					   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
+					   G_USB_DEVICE_RECIPIENT_DEVICE,
+					   GENESYS_SCALER_MSTAR_READ,
+					   helper->reg << 8 | 0x04,	/* value */
+					   0x0000,			/* idx */
+					   &status,			/* data */
+					   sizeof(status),		/* data length */
+					   NULL,			/* actual length */
+					   (guint)GENESYS_SCALER_USB_TIMEOUT,
+					   NULL,
+					   error)) {
+		g_prefix_error(error, "error reading flash control register: ");
+		return FALSE;
+	}
+
+	if ((status & 0x81) != helper->expected_val) {
+		g_set_error_literal(error,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INTERNAL,
+				    "wrong value in flash control register");
+		return FALSE;
+	}
+
+	return TRUE;
+}
+
+static gboolean
+fu_genesys_scaler_flash_control_write_enable(FuGenesysScaler *self,
+					     GError **error)
+{
+	FuDevice *parent_device = fu_device_get_parent(FU_DEVICE(self));
+	GUsbDevice *usb_device = fu_usb_device_get_dev(FU_USB_DEVICE(parent_device));
+	guint8 data1[] = {
+		GENESYS_SCALER_CMD_DATA_WRITE,
+		GENESYS_SCALER_FLASH_CONTROL_WRITE_ENABLE,
+	};
+	guint8 data2[] = {
+		GENESYS_SCALER_CMD_DATA_END,
+	};
+
+	/*
+	 * Write Enable:
+	 *
+	 * S + 0x92 + 0x10 + 0x06 + P
+	 * S + 0x92 + 0x12 + P
+	 */
+
+	if (!g_usb_device_control_transfer(usb_device,
+					   G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE,
+					   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
+					   G_USB_DEVICE_RECIPIENT_DEVICE,
+					   GENESYS_SCALER_MSTAR_WRITE,
+					   0x0000,		/* value */
+					   0x0000,		/* idx */
+					   data1,		/* data */
+					   sizeof(data1),	/* data length */
+					   NULL,		/* actual length */
+					   (guint)GENESYS_SCALER_USB_TIMEOUT,
+					   NULL,
+					   error)) {
+		g_prefix_error(error, "error sending flash control write enable: ");
+		return FALSE;
+	}
+
+	if (!g_usb_device_control_transfer(usb_device,
+					   G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE,
+					   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
+					   G_USB_DEVICE_RECIPIENT_DEVICE,
+					   GENESYS_SCALER_MSTAR_WRITE,
+					   0x0000,		/* value */
+					   0x0000,		/* idx */
+					   data2,		/* data */
+					   sizeof(data2),	/* data length */
+					   NULL,		/* actual length */
+					   (guint)GENESYS_SCALER_USB_TIMEOUT,
+					   NULL,
+					   error)) {
+		g_prefix_error(error, "error sending flash control write enable: ");
+		return FALSE;
+	}
+
+	return TRUE;
+}
+
+static gboolean
+fu_genesys_scaler_flash_control_write_status(FuGenesysScaler *self,
+					     guint8 status,
+					     GError **error)
+{
+	FuDevice *parent_device = fu_device_get_parent(FU_DEVICE(self));
+	GUsbDevice *usb_device = fu_usb_device_get_dev(FU_USB_DEVICE(parent_device));
+	guint8 data1[] = {
+		GENESYS_SCALER_CMD_DATA_WRITE,
+		GENESYS_SCALER_FLASH_CONTROL_WRITE_STATUS,
+		status,
+	};
+	guint8 data2[] = {
+		GENESYS_SCALER_CMD_DATA_END,
+	};
+
+	/*
+	 * Write Status Register:
+	 *
+	 * S + 0x92 + 0x10 + 0x01 + value + P
+	 * S + 0x92 + 0x12 + P
+	 */
+
+	if (!g_usb_device_control_transfer(usb_device,
+					   G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE,
+					   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
+					   G_USB_DEVICE_RECIPIENT_DEVICE,
+					   GENESYS_SCALER_MSTAR_WRITE,
+					   0x0000,		/* value */
+					   0x0000,		/* idx */
+					   data1,		/* data */
+					   sizeof(data1),	/* data length */
+					   NULL,		/* actual length */
+					   (guint)GENESYS_SCALER_USB_TIMEOUT,
+					   NULL,
+					   error)) {
+		g_prefix_error(error, "error sending flash control write status 0x%02x: ", status);
+		return FALSE;
+	}
+
+	if (!g_usb_device_control_transfer(usb_device,
+					   G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE,
+					   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
+					   G_USB_DEVICE_RECIPIENT_DEVICE,
+					   GENESYS_SCALER_MSTAR_WRITE,
+					   0x0000,		/* value */
+					   0x0000,		/* idx */
+					   data2,		/* data */
+					   sizeof(data2),	/* data length */
+					   NULL,		/* actual length */
+					   (guint)GENESYS_SCALER_USB_TIMEOUT,
+					   NULL,
+					   error)) {
+		g_prefix_error(error, "error sending flash control write status 0x%02x: ", status);
+		return FALSE;
+	}
+
+	return TRUE;
+}
+
+static gboolean
+fu_genesys_scaler_flash_control_sector_erase(FuGenesysScaler *self,
+					     guint addr,
+					     GError **error)
+{
+	FuDevice *parent_device = fu_device_get_parent(FU_DEVICE(self));
+	GUsbDevice *usb_device = fu_usb_device_get_dev(FU_USB_DEVICE(parent_device));
+	WaitFlashRegisterHelper helper = {
+		.reg = GENESYS_SCALER_FLASH_CONTROL_READ_STATUS,
+		.expected_val = 0,
+	};
+	guint8 data1[] = {
+		GENESYS_SCALER_CMD_DATA_WRITE,
+		GENESYS_SCALER_FLASH_CONTROL_SECTOR_ERASE,
+		(addr & 0x00ff0000) >> 16,
+		(addr & 0x0000ff00) >> 8,
+		(addr & 0x000000ff),
+	};
+	guint8 data2[] = {
+		GENESYS_SCALER_CMD_DATA_END,
+	};
+
+	if (!fu_genesys_scaler_flash_control_write_enable(self, error))
+		return FALSE;
+
+	if (!fu_genesys_scaler_flash_control_write_status(self, 0x00, error))
+		return FALSE;
+
+	/* 5s: 500 x 10ms retries */
+	if (!fu_device_retry(FU_DEVICE(self),
+			     fu_genesys_scaler_wait_flash_control_register_cb,
+			     500,
+			     &helper,
+			     error)) {
+		g_prefix_error(error, "error waiting for flash control read status register: ");
+		return FALSE;
+	}
+
+	/*
+	 * Sector Erase, every 4K bytes:
+	 *
+	 * S + 0x92 + 0x10 + 0x20 + addr1 + addr2 + addr3 + P
+	 * S + 0x92 + 0x12 + P
+	 */
+
+	if (!fu_genesys_scaler_flash_control_write_enable(self, error))
+		return FALSE;
+
+	if (!g_usb_device_control_transfer(usb_device,
+					   G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE,
+					   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
+					   G_USB_DEVICE_RECIPIENT_DEVICE,
+					   GENESYS_SCALER_MSTAR_WRITE,
+					   0x0000,		/* value */
+					   0x0000,		/* idx */
+					   data1,		/* data */
+					   sizeof(data1),	/* data length */
+					   NULL,		/* actual length */
+					   (guint)GENESYS_SCALER_USB_TIMEOUT,
+					   NULL,
+					   error)) {
+		g_prefix_error(error, "error sending flash control erase at address #%06x: ", addr);
+		return FALSE;
+	}
+
+	if (!g_usb_device_control_transfer(usb_device,
+					   G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE,
+					   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
+					   G_USB_DEVICE_RECIPIENT_DEVICE,
+					   GENESYS_SCALER_MSTAR_WRITE,
+					   0x0000,		/* value */
+					   0x0000,		/* idx */
+					   data2,		/* data */
+					   sizeof(data2),	/* data length */
+					   NULL,		/* actual length */
+					   (guint)GENESYS_SCALER_USB_TIMEOUT,
+					   NULL,
+					   error)) {
+		g_prefix_error(error, "error sending flash control erase at address #%06x: ", addr);
+		return FALSE;
+	}
+
+	/* 5s: 500 x 10ms retries */
+	if (!fu_device_retry(FU_DEVICE(self),
+			     fu_genesys_scaler_wait_flash_control_register_cb,
+			     500,
+			     &helper,
+			     error)) {
+		g_prefix_error(error, "error waiting for flash control read status register: ");
+		return FALSE;
+	}
+
+	return TRUE;
+}
+
+static gboolean
+fu_genesys_scaler_erase_flash(FuGenesysScaler *self,
+			      guint start_addr,
+			      guint len,
+			      GError **error)
+{
+	const guint flash_erase_len = 4096;
+	guint addr, count;
+
+	addr = start_addr;
+	count = (len + flash_erase_len - 1) / flash_erase_len;
+	for (guint i = 0; i < count; i++) {
+		if (!fu_genesys_scaler_flash_control_sector_erase(self, addr, error)) {
+			g_prefix_error(error, "error erasing flash at address #%06x: ", addr);
+			return FALSE;
+		}
+
+		addr += flash_erase_len;
+	}
+
+	return TRUE;
+}
+
+static gboolean
+fu_genesys_scaler_flash_control_page_program(FuGenesysScaler *self,
+					     guint start_addr,
+					     const guint8 *buf,
+					     guint len,
+					     GError **error)
+{
+	FuDevice *parent_device = fu_device_get_parent(FU_DEVICE(self));
+	GUsbDevice *usb_device = fu_usb_device_get_dev(FU_USB_DEVICE(parent_device));
+	WaitFlashRegisterHelper helper = {
+		.reg = GENESYS_SCALER_FLASH_CONTROL_READ_STATUS,
+		.expected_val = 0,
+	};
+	g_autofree guint8 *data = NULL;
+	guint8 data1[] = {
+		GENESYS_SCALER_CMD_DATA_WRITE,
+		GENESYS_SCALER_FLASH_CONTROL_PAGE_PROGRAM,
+		(start_addr & 0x00ff0000) >> 16,
+		(start_addr & 0x0000ff00) >> 8,
+		(start_addr & 0x000000ff),
+	};
+#if 0
+	guint8 data2[] = {
+		GENESYS_SCALER_CMD_DATA_END,
+	};
+#endif
+	const guint trf_len = 64;
+	guint count;
+
+	/*
+	 * Page Program, every 256 bytes:
+	 *
+	 * S + 0x92 + 0x10 + 0x02(program) + addr1 + addr2 + addr3 + code1 + code2 + code3 + ... + codeN + P
+	 * [TODO]: ISP Tool comments says S + 0x92 + 0x12 + P, but it does not exist in source.
+	 */
+
+	data = g_malloc0(trf_len);
+	memcpy(data, data1, sizeof(data1));
+	memcpy(data + sizeof(data1), buf, trf_len - sizeof(data1));
+	if (!g_usb_device_control_transfer(usb_device,
+					   G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE,
+					   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
+					   G_USB_DEVICE_RECIPIENT_DEVICE,
+					   GENESYS_SCALER_MSTAR_WRITE,
+					   0x0010,	/* value */
+					   0x0000,	/* idx */
+					   data,	/* data */
+					   trf_len,	/* data length */
+					   NULL,	/* actual length */
+					   (guint)GENESYS_SCALER_USB_TIMEOUT,
+					   NULL,
+					   error)) {
+		g_prefix_error(error, "error sending flash control page program at address #%06x: ",
+			       start_addr);
+		return FALSE;
+	}
+
+	count = len / trf_len;
+	for (guint i = 1; i < count; i++) {
+		memcpy(data, buf + (i * trf_len) - sizeof(data1), trf_len);
+		if (!g_usb_device_control_transfer(usb_device,
+						   G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE,
+						   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
+						   G_USB_DEVICE_RECIPIENT_DEVICE,
+						   GENESYS_SCALER_MSTAR_WRITE,
+						   0x0010 + (0x0010 * i),	/* value */
+						   0x0000,			/* idx */
+						   data,			/* data */
+						   trf_len,			/* data length */
+						   NULL,			/* actual length */
+						   (guint)GENESYS_SCALER_USB_TIMEOUT,
+						   NULL,
+						   error)) {
+			g_prefix_error(error, "error sending flash control page program at address #%06x: ",
+				       start_addr);
+			return FALSE;
+		}
+	}
+
+	memcpy(data, buf + (count * trf_len) - sizeof(data1), sizeof(data1));
+	if (!g_usb_device_control_transfer(usb_device,
+					   G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE,
+					   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
+					   G_USB_DEVICE_RECIPIENT_DEVICE,
+					   GENESYS_SCALER_MSTAR_WRITE,
+					   (0x0010 + (0x0010 * count)) | 0x0080,	/* value */
+					   0x0000,					/* idx */
+					   data,					/* data */
+					   sizeof(data1),				/* data length */
+					   NULL,					/* actual length */
+					   (guint)GENESYS_SCALER_USB_TIMEOUT,
+					   NULL,
+					   error)) {
+		g_prefix_error(error, "error sending flash control page program at address #%06x: ",
+			       start_addr);
+		return FALSE;
+	}
+
+#if 0
+	/* [TODO]: ISP Tool comments says S + 0x92 + 0x12 + P, but it does not exist in source. */
+	if (!g_usb_device_control_transfer(usb_device,
+					   G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE,
+					   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
+					   G_USB_DEVICE_RECIPIENT_DEVICE,
+					   GENESYS_SCALER_MSTAR_WRITE,
+					   /* ??? */,		/* value */
+					   /* ??? */,		/* idx */
+					   data2,		/* data */
+					   sizeof(data2),	/* data length */
+					   NULL,		/* actual length */
+					   (guint)GENESYS_SCALER_USB_TIMEOUT,
+					   NULL,
+					   error)) {
+		g_prefix_error(error, "error sending flash control page program at address #%06x: ",
+			       addr);
+		return FALSE;
+	}
+#endif
+
+	/* [TODO]: CLI: was 200ms: 40 x 5ms retries */
+	/* 200ms: 20 x 10ms retries */
+	if (!fu_device_retry(FU_DEVICE(self),
+			     fu_genesys_scaler_wait_flash_control_register_cb,
+			     20,
+			     &helper,
+			     error)) {
+		g_prefix_error(error, "error waiting for flash control read status register: ");
+		return FALSE;
+	}
+
+	return TRUE;
+}
+
+static gboolean
+fu_genesys_scaler_write_sector(FuGenesysScaler *self,
+			       guint start_addr,
+			       const guint8 *buf,
+			       guint len,
+			       GError **error)
+{
+	const guint flash_page_program_len = 256;
+
+	for (guint i = 0; i < len; i += flash_page_program_len)
+		if (!fu_genesys_scaler_flash_control_page_program(self,
+								  start_addr + i,
+								  (guint8 *)buf + i,
+								  flash_page_program_len,
+								  error))
+			return FALSE;
+
+	return TRUE;
+}
+
+static gboolean
+fu_genesys_scaler_write_flash(FuGenesysScaler *self,
+			      guint start_addr,
+			      const guint8 *buf,
+			      guint len,
+			      GError **error)
+{
+	const guint flash_sector_len = 4096;
+
+	for (guint i = 0; i < len; i += flash_sector_len)
+		if (!fu_genesys_scaler_write_sector(self,
+						    start_addr + i,
+						    (guint8 *)buf + i,
+						    flash_sector_len,
+						    error))
+			return FALSE;
+
+	return TRUE;
+}
+
+static gboolean
 fu_genesys_scaler_probe(FuDevice *device, GError **error)
 {
 	FuGenesysScaler *self = FU_GENESYS_SCALER(device);
@@ -1231,9 +1738,105 @@ error:
 }
 
 static void
+fu_genesys_scaler_decrypt(guint8 *buf, gsize bufsz)
+{
+	const char *key = "mstar";
+	const gsize keylen = strlen(key);
+
+	for (guint i = 0; i < bufsz; i++)
+		buf[i] ^= key[i % keylen];
+}
+
+static gboolean
+fu_genesys_scaler_write_firmware(FuDevice *device,
+				 FuFirmware *fw,
+				 FuProgress *progress,
+				 FwupdInstallFlags flags,
+				 GError **error)
+{
+	FuGenesysScaler *self = FU_GENESYS_SCALER(device);
+	g_autoptr(FuDeviceLocker) locker = NULL;
+	guint protect_sector_addr[2] = { 0x000000 };
+	gsize protect_sector_size[2] = { 0x000000 };
+	guint public_key_addr = 0x000000;
+	gsize public_key_size = 0x000000;
+	guint addr = 0x000000;
+	gsize size = 0x200000;
+	const guint8 *data;
+	MTKFooter footer;
+	GBytes *fw_blob;
+
+	fw_blob = fu_firmware_get_bytes(fw, error);
+	if (!fw_blob)
+		return FALSE;
+
+	data = g_bytes_get_data(fw_blob, &size);
+	memcpy(&footer, data + size - sizeof(footer), sizeof(footer));
+	fu_genesys_scaler_decrypt((guint8 *)&footer, sizeof(footer));
+	if (memcmp(footer.data.header.default_head, MTK_RSA_HEADER,
+		   sizeof(footer.data.header.default_head)) != 0) {
+		g_set_error_literal(error,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INTERNAL,
+				    "invalid footer");
+		return FALSE;
+	}
+	size -= sizeof(footer);
+
+	if (footer.data.header.configuration_setting.bits.second_image)
+		addr = *(guint32 *)footer.data.header.second_image_program_addr;
+
+	if (footer.data.header.configuration_setting.bits.decrypt_mode) {
+		public_key_addr = *(guint32 *)footer.data.header.scaler_public_key_addr;
+		public_key_size = 0x1000;
+	}
+
+	if (footer.data.header.configuration_setting.bits.special_protect_sector) {
+		if (footer.data.header.protect_sector[0].area.size) {
+			protect_sector_addr[0] = (footer.data.header.protect_sector[0].area.addr_high  << 16) |
+						 (footer.data.header.protect_sector[0].area.addr_low[1] << 8) |
+						 (footer.data.header.protect_sector[0].area.addr_low[0]);
+			protect_sector_addr[0] *= 0x1000;
+			protect_sector_size[0] = footer.data.header.protect_sector[0].area.size * 0x1000;
+		}
+
+		if (footer.data.header.protect_sector[1].area.size) {
+			protect_sector_addr[1] = (footer.data.header.protect_sector[1].area.addr_high  << 16) |
+						 (footer.data.header.protect_sector[1].area.addr_low[1] << 8) |
+						 (footer.data.header.protect_sector[1].area.addr_low[0]);
+			protect_sector_addr[1] *= 0x1000;
+			protect_sector_size[1] = footer.data.header.protect_sector[1].area.size * 0x1000;
+		}
+	}
+
+	if (!fu_genesys_scaler_enter_isp(self, error))
+		goto error;
+
+	/* [TODO] Think about moving this to the quirk file */
+	if (!fu_genesys_scaler_query_flash_id(self, error))
+		goto error;
+
+	if (!fu_genesys_scaler_erase_flash(self, addr, size, error))
+		goto error;
+
+	if (!fu_genesys_scaler_write_flash(self, addr, data, size, error))
+		goto error;
+
+	if (!fu_genesys_scaler_exit(self, error))
+		return FALSE;
+
+	return TRUE;
+
+error:
+	fu_genesys_scaler_exit(self, error);
+	return FALSE;
+}
+
+static void
 fu_genesys_scaler_init(FuGenesysScaler *self)
 {
 	fu_device_add_protocol(FU_DEVICE(self), "com.genesys.scaler");
+	fu_device_retry_set_delay(FU_DEVICE(self), 10); /* ms */
 }
 
 static void
@@ -1244,6 +1847,7 @@ fu_genesys_scaler_class_init(FuGenesysScalerClass *klass)
 	klass_device->open = fu_genesys_scaler_open;
 	klass_device->close = fu_genesys_scaler_close;
 	klass_device->dump_firmware = fu_genesys_scaler_dump_firmware;
+	klass_device->write_firmware = fu_genesys_scaler_write_firmware;
 }
 
 FuGenesysScaler *
