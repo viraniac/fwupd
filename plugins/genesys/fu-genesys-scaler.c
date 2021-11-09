@@ -244,7 +244,7 @@ fu_genesys_scaler_mst_i2c_bus_ctrl(FuGenesysScaler *self, GError **error)
 						   (guint)GENESYS_SCALER_USB_TIMEOUT,
 						   NULL,
 						   error)) {
-			g_prefix_error(error, "error sending i2c bus ctrl: %02x", data[i]);
+			g_prefix_error(error, "error sending i2c bus ctrl %02x: ", data[i]);
 			return FALSE;
 		}
 	}
@@ -273,7 +273,7 @@ fu_genesys_scaler_mst_i2c_bus_switch_to_ch0(FuGenesysScaler *self, GError **erro
 						   (guint)GENESYS_SCALER_USB_TIMEOUT,
 						   NULL,
 						   error)) {
-			g_prefix_error(error, "error sending i2c bus ch0: %02x", data[i]);
+			g_prefix_error(error, "error sending i2c bus ch0 %02x: ", data[i]);
 			return FALSE;
 		}
 	}
@@ -302,7 +302,7 @@ fu_genesys_scaler_mst_i2c_bus_switch_to_ch4(FuGenesysScaler *self, GError **erro
 						   (guint)GENESYS_SCALER_USB_TIMEOUT,
 						   NULL,
 						   error)) {
-			g_prefix_error(error, "error sending i2c bus ch4: %02x", data[i]);
+			g_prefix_error(error, "error sending i2c bus ch4 %02x: ", data[i]);
 			return FALSE;
 		}
 	}
@@ -355,7 +355,7 @@ fu_genesys_scaler_pause_r2_cpu(FuGenesysScaler *self, GError **error)
 					   (guint)GENESYS_SCALER_USB_TIMEOUT,
 					   NULL,
 					   error)) {
-		g_prefix_error(error, "error reading register %02x%02x%02x%02x%02x:",
+		g_prefix_error(error, "error reading register %02x%02x%02x%02x%02x: ",
 			       data[0], data[1], data[2], data[3], data[4]);
 		return FALSE;
 	}
