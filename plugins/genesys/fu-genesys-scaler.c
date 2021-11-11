@@ -550,7 +550,7 @@ fu_genesys_scaler_query_flash_id(FuGenesysScaler *self, GError **error)
 	 *
 	 * S + 0x92 + 0x10 + 0x9F + P
 	 * S + 0x92 + 0x11 + P
-	 * S + 0x93 + (read) Data1 + Data2 + Data3 + P
+	 * S + 0x93 + (read) data1 + data2 + data3 + P
 	 * S + 0x92 + 0x12 + P
 	 */
 	if (!g_usb_device_control_transfer(usb_device,
@@ -767,6 +767,8 @@ fu_genesys_scaler_read_flash(FuGenesysScaler *self,
 	guint count = 0;
 
 	/*
+	 * Read:
+	 *
 	 * S + 0x92 + 0x10 + 0x03 + addr1 + addr2 + addr3 + P
 	 * S + 0x92 + 0x11
 	 * S + 0x93 + (read) data1 + data2 + data3 + ... + data1024 + P
