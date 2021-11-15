@@ -266,7 +266,7 @@ fu_genesys_usbhub_read_flash(FuGenesysUsbhub *self,
 						   buf + count,		   /* data */
 						   transfer_len,	   /* data length */
 						   NULL,		   /* actual length */
-						   (guint)GENESYS_USBHUB_USB_TIMEOUT,
+						   GENESYS_USBHUB_USB_TIMEOUT,
 						   NULL,
 						   error)) {
 			g_prefix_error(error, "error reading flash at @%0x: ", addr);
@@ -296,7 +296,7 @@ fu_genesys_usbhub_reset(FuGenesysUsbhub *self, GError **error)
 					   NULL,   /* data */
 					   0,	   /* data length */
 					   NULL,   /* actual length */
-					   (guint)GENESYS_USBHUB_USB_TIMEOUT,
+					   GENESYS_USBHUB_USB_TIMEOUT,
 					   NULL,
 					   error)) {
 		g_prefix_error(error, "error resetting device: ");
@@ -343,7 +343,7 @@ fu_genesys_usbhub_get_flash_chip_idx(FuGenesysUsbhub *self, GError **error)
 			buffer,					   /* data */
 			flash_info[i][FLASH_INFO_RDID_CMD_LENGTH], /* data length */
 			NULL,					   /* actual length */
-			(guint)GENESYS_USBHUB_USB_TIMEOUT,
+			GENESYS_USBHUB_USB_TIMEOUT,
 			NULL,
 			error)) {
 			g_prefix_error(error, "error reading flash chip: ");
@@ -390,7 +390,7 @@ fu_genesys_usbhub_wait_flash_status_register_cb(FuDevice *dev, gpointer user_dat
 					   &status,		    /* data */
 					   1,			    /* data length */
 					   NULL,		    /* actual length */
-					   (guint)GENESYS_USBHUB_USB_TIMEOUT,
+					   GENESYS_USBHUB_USB_TIMEOUT,
 					   NULL,
 					   error)) {
 		g_prefix_error(error, "error getting flash status register (0x%0x): ", helper->reg);
@@ -422,7 +422,7 @@ fu_genesys_usbhub_set_isp_mode(FuGenesysUsbhub *self, IspMode mode, GError **err
 					   NULL, /* data */
 					   0,	 /* data length */
 					   NULL, /* actual length */
-					   (guint)GENESYS_USBHUB_USB_TIMEOUT,
+					   GENESYS_USBHUB_USB_TIMEOUT,
 					   NULL,
 					   error)) {
 		g_prefix_error(error,
@@ -469,7 +469,7 @@ fu_genesys_usbhub_authentication_request(FuGenesysUsbhub *self,
 					   &buf,			     /* data */
 					   1,				     /* data length */
 					   NULL,			     /* actual length */
-					   (guint)GENESYS_USBHUB_USB_TIMEOUT,
+					   GENESYS_USBHUB_USB_TIMEOUT,
 					   NULL,
 					   error)) {
 		g_prefix_error(error,
@@ -487,7 +487,7 @@ fu_genesys_usbhub_authentication_request(FuGenesysUsbhub *self,
 					   &buf,			     /* data */
 					   1,				     /* data length */
 					   NULL,			     /* actual length */
-					   (guint)GENESYS_USBHUB_USB_TIMEOUT,
+					   GENESYS_USBHUB_USB_TIMEOUT,
 					   NULL,
 					   error)) {
 		g_prefix_error(error,
@@ -1036,7 +1036,7 @@ fu_genesys_usbhub_erase_flash(FuGenesysUsbhub *self,
 						   NULL,   /* data */
 						   0,	   /* data length */
 						   NULL,   /* actual length */
-						   (guint)GENESYS_USBHUB_USB_TIMEOUT,
+						   GENESYS_USBHUB_USB_TIMEOUT,
 						   NULL,
 						   error)) {
 			g_prefix_error(error,
@@ -1096,7 +1096,7 @@ fu_genesys_usbhub_write_flash(FuGenesysUsbhub *self,
 						   (guint8 *)buf + count,		   /* data FIXME: create a tmp buffer! */
 						   transfer_len,	                   /* data length */
 						   NULL,		                   /* actual length */
-						   (guint)GENESYS_USBHUB_USB_TIMEOUT,
+						   GENESYS_USBHUB_USB_TIMEOUT,
 						   NULL,
 						   error)) {
 			g_prefix_error(error, "error writing flash at @%0x: ", addr);
