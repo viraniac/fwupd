@@ -857,7 +857,7 @@ static gboolean
 fu_genesys_scaler_probe(FuDevice *device, GError **error)
 {
 	FuGenesysScaler *self = FU_GENESYS_SCALER(device);
-	guint8 version[0x10] = {0};
+	guint8 version[7+1] = {0}; /* ?RIM123; where ? is 0x06 (length?) */
 	self->cpu_model = MCPU_TSUM_G; /* Assuming model is TSUM_G for now */
 
 	if (!fu_genesys_scaler_get_level(self, &self->level, error))
@@ -865,7 +865,7 @@ fu_genesys_scaler_probe(FuDevice *device, GError **error)
 
 	if (!fu_genesys_scaler_get_version(self, version, sizeof(version), error))
 		return FALSE;
-	version[10] = 0;
+	version[7] = 0;
 
 	if (!fu_genesys_scaler_get_public_key(self, self->public_key,
 					      sizeof(self->public_key), error))
