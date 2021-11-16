@@ -201,7 +201,7 @@ fu_genesys_scaler_enter_debug_mode(FuGenesysScaler *self, GError **error)
 {
 	FuDevice *parent_device = fu_device_get_parent(FU_DEVICE(self));
 	GUsbDevice *usb_device = fu_usb_device_get_dev(FU_USB_DEVICE(parent_device));
-	guint8 data[] = { 0x10, 0x00, 0x00, 0x00, 0x00 };
+	guint8 data[] = { 0x10, 0x00, 0x00, 0x00 };
 
 	if (!g_usb_device_control_transfer(usb_device,
 					   G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE,
