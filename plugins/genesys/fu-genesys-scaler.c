@@ -14,8 +14,8 @@
 #include "fu-genesys-common.h"
 #include "fu-genesys-scaler.h"
 
-#define GENESYS_SCALER_MSTAR_READ  0x7d
-#define GENESYS_SCALER_MSTAR_WRITE 0x7e
+#define GENESYS_SCALER_MSTAR_READ  0x7a
+#define GENESYS_SCALER_MSTAR_WRITE 0x7b
 
 #define GENESYS_SCALER_CMD_DATA_WRITE 0x10
 #define GENESYS_SCALER_CMD_DATA_READ  0x11
