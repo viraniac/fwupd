@@ -1766,6 +1766,11 @@ fu_genesys_scaler_write_firmware(FuDevice *device,
 	MTKFooter footer;
 	GBytes *fw_blob;
 
+	fu_progress_set_id(progress, G_STRLOC);
+	fu_progress_add_flag(progress, FU_PROGRESS_FLAG_GUESSED);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_ERASE, 7);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 93);
+
 	fw_blob = fu_firmware_get_bytes(fw, error);
 	if (!fw_blob)
 		return FALSE;
@@ -1818,9 +1823,11 @@ fu_genesys_scaler_write_firmware(FuDevice *device,
 
 	if (!fu_genesys_scaler_erase_flash(self, addr, size, error))
 		goto error;
+	fu_progress_step_done(progress);                                        
 
 	if (!fu_genesys_scaler_write_flash(self, addr, data, size, error))
 		goto error;
+	fu_progress_step_done(progress);
 
 	if (!fu_genesys_scaler_exit(self, error))
 		return FALSE;
