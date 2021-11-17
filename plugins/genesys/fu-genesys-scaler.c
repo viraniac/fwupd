@@ -1771,6 +1771,7 @@ fu_genesys_scaler_write_firmware(FuDevice *device,
 	gsize protect_sector_size[2] = { 0x000000 };
 	guint public_key_addr = 0x000000;
 	gsize public_key_size = 0x000000;
+	g_autofree guint8 *buf = NULL;
 	guint addr = 0x000000;
 	gsize size = 0x200000;
 	const guint8 *data;
@@ -1778,8 +1779,9 @@ fu_genesys_scaler_write_firmware(FuDevice *device,
 	GBytes *fw_blob;
 
 	fu_progress_set_id(progress, G_STRLOC);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_ERASE, 7);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 93);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_ERASE, 4);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 54);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_VERIFY, 42);
 
 	fw_blob = fu_firmware_get_bytes(fw, error);
 	if (!fw_blob)
@@ -1838,6 +1840,12 @@ fu_genesys_scaler_write_firmware(FuDevice *device,
 
 	if (!fu_genesys_scaler_write_flash(self, fu_progress_get_child(progress),
 					   addr, data, size, error))
+		goto error;
+	fu_progress_step_done(progress);
+
+	buf = g_malloc0(size);
+	if (!fu_genesys_scaler_read_flash(self, fu_progress_get_child(progress),
+					  addr, buf, size, error))
 		goto error;
 	fu_progress_step_done(progress);
 
