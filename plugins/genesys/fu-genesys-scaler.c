@@ -1463,6 +1463,7 @@ fu_genesys_scaler_flash_control_sector_erase(FuGenesysScaler *self,
 
 static gboolean
 fu_genesys_scaler_erase_flash(FuGenesysScaler *self,
+			      FuProgress *progress,
 			      guint start_addr,
 			      guint len,
 			      GError **error)
@@ -1477,6 +1478,7 @@ fu_genesys_scaler_erase_flash(FuGenesysScaler *self,
 			g_prefix_error(error, "error erasing flash at address #%06x: ", addr);
 			return FALSE;
 		}
+		fu_progress_set_percentage_full(progress, i, count);
 
 		addr += flash_erase_len;
 	}
@@ -1639,6 +1641,7 @@ fu_genesys_scaler_write_sector(FuGenesysScaler *self,
 
 static gboolean
 fu_genesys_scaler_write_flash(FuGenesysScaler *self,
+			      FuProgress *progress,
 			      guint start_addr,
 			      const guint8 *buf,
 			      guint len,
@@ -1646,13 +1649,15 @@ fu_genesys_scaler_write_flash(FuGenesysScaler *self,
 {
 	const guint flash_sector_len = 4096;
 
-	for (guint i = 0; i < len; i += flash_sector_len)
+	for (guint i = 0; i < len; i += flash_sector_len) {
 		if (!fu_genesys_scaler_write_sector(self,
 						    start_addr + i,
 						    (guint8 *)buf + i,
 						    flash_sector_len,
 						    error))
 			return FALSE;
+		fu_progress_set_percentage_full(progress, i, len);
+	}
 
 	return TRUE;
 }
@@ -1767,7 +1772,6 @@ fu_genesys_scaler_write_firmware(FuDevice *device,
 	GBytes *fw_blob;
 
 	fu_progress_set_id(progress, G_STRLOC);
-	fu_progress_add_flag(progress, FU_PROGRESS_FLAG_GUESSED);
 	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_ERASE, 7);
 	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 93);
 
@@ -1821,11 +1825,13 @@ fu_genesys_scaler_write_firmware(FuDevice *device,
 	if (!fu_genesys_scaler_query_flash_id(self, error))
 		goto error;
 
-	if (!fu_genesys_scaler_erase_flash(self, addr, size, error))
+	if (!fu_genesys_scaler_erase_flash(self, fu_progress_get_child(progress),
+					   addr, size, error))
 		goto error;
 	fu_progress_step_done(progress);                                        
 
-	if (!fu_genesys_scaler_write_flash(self, addr, data, size, error))
+	if (!fu_genesys_scaler_write_flash(self, fu_progress_get_child(progress),
+					   addr, data, size, error))
 		goto error;
 	fu_progress_step_done(progress);
 
@@ -1837,6 +1843,17 @@ fu_genesys_scaler_write_firmware(FuDevice *device,
 error:
 	fu_genesys_scaler_exit(self, error);
 	return FALSE;
+}
+
+static void
+fu_genesys_scaler_set_progress(FuDevice *self, FuProgress *progress)
+{
+	fu_progress_set_id(progress, G_STRLOC);
+	fu_progress_add_flag(progress, FU_PROGRESS_FLAG_GUESSED);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0); /* detach */
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 100);	/* write */
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0); /* attach */
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 0);	/* reload */
 }
 
 static void
@@ -1855,6 +1872,7 @@ fu_genesys_scaler_class_init(FuGenesysScalerClass *klass)
 	klass_device->close = fu_genesys_scaler_close;
 	klass_device->dump_firmware = fu_genesys_scaler_dump_firmware;
 	klass_device->write_firmware = fu_genesys_scaler_write_firmware;
+	klass_device->set_progress = fu_genesys_scaler_set_progress;
 }
 
 FuGenesysScaler *
