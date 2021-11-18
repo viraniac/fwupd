@@ -1096,6 +1096,7 @@ fu_genesys_scaler_get_public_key(FuGenesysScaler *self,
 
 static gboolean
 fu_genesys_scaler_read_flash(FuGenesysScaler *self,
+			     FuProgress *progress,
 			     guint start_addr,
 			     guint8 *buf,
 			     guint len,
@@ -1184,6 +1185,7 @@ fu_genesys_scaler_read_flash(FuGenesysScaler *self,
 				       addr);
 			return FALSE;
 		}
+		fu_progress_set_percentage_full(progress, count, len);
 
 		count += transfer_len;
 	}
@@ -1721,6 +1723,9 @@ fu_genesys_scaler_dump_firmware(FuDevice *device, FuProgress *progress, GError *
 	gsize size = 0x200000;
 	guint addr = 0x200000; /* [FIXME]: 0 if second-image is not supported */
 
+	fu_progress_set_id(progress, G_STRLOC);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_READ, 100);
+
 	if (!fu_genesys_scaler_enter_isp(self, error))
 		return NULL;
 
@@ -1729,7 +1734,7 @@ fu_genesys_scaler_dump_firmware(FuDevice *device, FuProgress *progress, GError *
 		goto error;
 
 	buf = g_malloc0(size);
-	if (!fu_genesys_scaler_read_flash(self, addr, buf, size, error))
+	if (!fu_genesys_scaler_read_flash(self, progress, addr, buf, size, error))
 		goto error;
 
 	if (!fu_genesys_scaler_exit(self, error))
