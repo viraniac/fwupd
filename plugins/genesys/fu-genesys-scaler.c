@@ -1736,6 +1736,7 @@ fu_genesys_scaler_dump_firmware(FuDevice *device, FuProgress *progress, GError *
 	buf = g_malloc0(size);
 	if (!fu_genesys_scaler_read_flash(self, progress, addr, buf, size, error))
 		goto error;
+	fu_progress_step_done(progress);
 
 	if (!fu_genesys_scaler_exit(self, error))
 		return NULL;
