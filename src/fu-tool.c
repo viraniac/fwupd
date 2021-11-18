@@ -390,7 +390,7 @@ fu_util_progress_percentage_changed_cb(FuProgress *progress, guint percentage, F
 static void
 fu_util_progress_status_changed_cb(FuProgress *progress, FwupdStatus status, FuUtilPrivate *priv)
 {
-	fu_progressbar_update(priv->progressbar, status, 0);
+	fu_progressbar_update(priv->progressbar, status, fu_progress_get_percentage(progress));
 }
 
 static gboolean
