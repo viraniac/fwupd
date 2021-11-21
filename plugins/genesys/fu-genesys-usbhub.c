@@ -702,6 +702,9 @@ fu_genesys_usbhub_dump_firmware(FuDevice *device, FuProgress *progress, GError *
 	g_autofree guint8 *buf = NULL;
 	int size = self->code_size + self->extend_size;
 
+	fu_progress_set_id(progress, G_STRLOC);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_READ, 100);
+
 	if (!fu_genesys_usbhub_authenticate(self, error))
 		return NULL;
 	if (!fu_genesys_usbhub_set_isp_mode(self, ISP_ENTER, error))
@@ -710,6 +713,7 @@ fu_genesys_usbhub_dump_firmware(FuDevice *device, FuProgress *progress, GError *
 	buf = g_malloc0(size);
 	if (!fu_genesys_usbhub_read_flash(self, self->fw_bank_addr[0], buf, size, error))
 		return NULL;
+	fu_progress_step_done(progress);
 
 	return g_bytes_new_take(g_steal_pointer(&buf), size);
 }
@@ -1125,9 +1129,11 @@ fu_genesys_usbhub_write_firmware(FuDevice *device,
 				 FwupdInstallFlags flags,
 				 GError **error)
 {
+	gboolean write_recovery_bank = FALSE, read_first_bank = FALSE;
 	FuGenesysUsbhub *self = FU_GENESYS_USBHUB(device);
 	g_autoptr(FuDeviceLocker) locker = NULL;
 	gsize address = self->fw_bank_addr[0];
+	guint value, steps = 2;
 	GBytes *fw_blob;
 
 	fw_blob = fu_firmware_get_bytes(fw, error);
@@ -1145,6 +1151,10 @@ fu_genesys_usbhub_write_firmware(FuDevice *device,
 		/* Recovery is more recent than first bank: write fw on first bank only */
 		else
 			address = self->fw_bank_addr[0];
+		address = self->fw_bank_addr[1];
+
+		read_first_bank = self->isp_model == ISP_MODEL_HUB_GL3523;
+		write_recovery_bank = address == self->fw_bank_addr[1];
 	}
 
 	/* [TODO] Needed? */
@@ -1155,17 +1165,33 @@ fu_genesys_usbhub_write_firmware(FuDevice *device,
 	if (!fu_genesys_usbhub_set_isp_mode(self, ISP_ENTER, error))
 		return FALSE;
 
+	fu_progress_set_id(progress, G_STRLOC);
+	if (write_recovery_bank) {
+		if (read_first_bank)
+			steps += 1;
+		steps += 2;
+	}
+	value = 100 / steps;
+	if (write_recovery_bank) {
+		if (read_first_bank)
+			fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_READ, value);
+		fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_ERASE, value);
+		fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, value);
+	}
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_ERASE, value);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, value);
+
 	/*
 	 * [TODO] Does the fwupd plugin have to update the "recovery" bank?
 	 *        Clarify how the "recovery" bank works.
 	 */
 	/* Write fw to recovery bank first? */
-	if (address != self->fw_bank_addr[0]) {
+	if (write_recovery_bank) {
 		g_autofree guint8 *buf = NULL;
 		gsize bufsz = 0;
 
 		/* Reuse fw on first bank for GL3523 */
-		if (self->isp_model == ISP_MODEL_HUB_GL3523) {
+		if (read_first_bank) {
 			bufsz = self->code_size;
 			if (!bufsz)
 				return FALSE;
@@ -1180,6 +1206,7 @@ fu_genesys_usbhub_write_firmware(FuDevice *device,
 							  bufsz,
 							  error))
 				return FALSE;
+			fu_progress_step_done(progress);
 		}
 
 		if (!fu_genesys_usbhub_erase_flash(self,
@@ -1187,6 +1214,7 @@ fu_genesys_usbhub_write_firmware(FuDevice *device,
 						   bufsz ? bufsz : g_bytes_get_size(fw_blob),
 						   error))
 			return FALSE;
+		fu_progress_step_done(progress);
 
 		if (!fu_genesys_usbhub_write_flash(self,
 						   self->fw_bank_addr[1],
@@ -1194,6 +1222,7 @@ fu_genesys_usbhub_write_firmware(FuDevice *device,
 						   bufsz ? bufsz : g_bytes_get_size(fw_blob),
 						   error))
 			return FALSE;
+		fu_progress_step_done(progress);
 	}
 
 	/* Write fw to first bank then */
@@ -1202,7 +1231,7 @@ fu_genesys_usbhub_write_firmware(FuDevice *device,
 					   g_bytes_get_size(fw_blob),
 					   error))
 		return FALSE;
-
+	fu_progress_step_done(progress);
 
 	if (!fu_genesys_usbhub_write_flash(self,
 					   self->fw_bank_addr[0],
@@ -1210,6 +1239,7 @@ fu_genesys_usbhub_write_firmware(FuDevice *device,
 					   g_bytes_get_size(fw_blob),
 					   error))
 		return FALSE;
+	fu_progress_step_done(progress);
 
 	/*
 	 * [FIXME] Reset device and flag it to wait for replug as a simple
@@ -1224,6 +1254,17 @@ fu_genesys_usbhub_write_firmware(FuDevice *device,
 	fu_device_add_flag(device, FWUPD_DEVICE_FLAG_WAIT_FOR_REPLUG);
 
 	return TRUE;
+}
+
+static void
+fu_genesys_usbhub_set_progress(FuDevice *self, FuProgress *progress)
+{
+	fu_progress_set_id(progress, G_STRLOC);
+	fu_progress_add_flag(progress, FU_PROGRESS_FLAG_GUESSED);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0); /* detach */
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 60);	/* write */
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0); /* attach */
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 40);	/* reload */
 }
 
 static void
@@ -1244,4 +1285,5 @@ fu_genesys_usbhub_class_init(FuGenesysUsbhubClass *klass)
 	klass_device->setup = fu_genesys_usbhub_setup;
 	klass_device->dump_firmware = fu_genesys_usbhub_dump_firmware;
 	klass_device->write_firmware = fu_genesys_usbhub_write_firmware;
+	klass_device->set_progress = fu_genesys_usbhub_set_progress;
 }
