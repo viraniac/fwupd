@@ -1213,7 +1213,7 @@ fu_genesys_usbhub_write_firmware(FuDevice *device,
 
 	/*
 	 * [FIXME] Reset device and flag it to wait for replug as a simple
-	 * usleep does satisfy fwupd:
+	 * usleep does *not* satisfy fwupd:
 	 *
 	 * Restarting device…       [*************************************  ]
 	 * USB error on device 03f0:0610 : No such device (it may have been disconnected) [-4]
