@@ -191,6 +191,11 @@ typedef enum {
 	MCPU_MST9U4,
 } MStarChipID;
 
+typedef struct {
+	guint8 req_read;
+	guint8 req_write;
+} VendorCommand;
+
 struct _FuGenesysScaler {
 	FuDevice parent_instance;
 	MStarChipID cpu_model;
@@ -198,6 +203,7 @@ struct _FuGenesysScaler {
 	guint8 public_key[0x212];
 	guint8 flash_id[3];
 	gboolean enable_security_wp;
+	VendorCommand vc;
 };
 
 G_DEFINE_TYPE(FuGenesysScaler, fu_genesys_scaler, FU_TYPE_DEVICE)
@@ -213,7 +219,7 @@ fu_genesys_scaler_enter_serial_debug_mode(FuGenesysScaler *self, GError **error)
 					   G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE,
 					   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
 					   G_USB_DEVICE_RECIPIENT_DEVICE,
-					   GENESYS_SCALER_MSTAR_WRITE,
+					   self->vc.req_write,
 					   0x0001,		/* value */
 					   0x0000,		/* idx */
 					   data,		/* data */
@@ -242,7 +248,7 @@ fu_genesys_scaler_exit_serial_debug_mode(FuGenesysScaler *self, GError **error)
 					   G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE,
 					   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
 					   G_USB_DEVICE_RECIPIENT_DEVICE,
-					   GENESYS_SCALER_MSTAR_WRITE,
+					   self->vc.req_write,
 					   0x0001,		/* value */
 					   0x0000,		/* idx */
 					   data,		/* data */
@@ -270,7 +276,7 @@ fu_genesys_scaler_enter_single_step_mode(FuGenesysScaler *self, GError **error)
 					   G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE,
 					   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
 					   G_USB_DEVICE_RECIPIENT_DEVICE,
-					   GENESYS_SCALER_MSTAR_WRITE,
+					   self->vc.req_write,
 					   0x0001,		/* value */
 					   0x0000,		/* idx */
 					   data1,		/* data */
@@ -287,7 +293,7 @@ fu_genesys_scaler_enter_single_step_mode(FuGenesysScaler *self, GError **error)
 					   G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE,
 					   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
 					   G_USB_DEVICE_RECIPIENT_DEVICE,
-					   GENESYS_SCALER_MSTAR_WRITE,
+					   self->vc.req_write,
 					   0x0001,		/* value */
 					   0x0000,		/* idx */
 					   data2,		/* data */
@@ -314,7 +320,7 @@ fu_genesys_scaler_exit_single_step_mode(FuGenesysScaler *self, GError **error)
 					   G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE,
 					   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
 					   G_USB_DEVICE_RECIPIENT_DEVICE,
-					   GENESYS_SCALER_MSTAR_WRITE,
+					   self->vc.req_write,
 					   0x0001,		/* value */
 					   0x0000,		/* idx */
 					   data,		/* data */
@@ -341,7 +347,7 @@ fu_genesys_scaler_enter_debug_mode(FuGenesysScaler *self, GError **error)
 					   G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE,
 					   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
 					   G_USB_DEVICE_RECIPIENT_DEVICE,
-					   GENESYS_SCALER_MSTAR_WRITE,
+					   self->vc.req_write,
 					   0x0001,		/* value */
 					   0x0000,		/* idx */
 					   data,		/* data */
@@ -369,7 +375,7 @@ fu_genesys_scaler_mst_i2c_bus_ctrl(FuGenesysScaler *self, GError **error)
 						   G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE,
 						   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
 						   G_USB_DEVICE_RECIPIENT_DEVICE,
-						   GENESYS_SCALER_MSTAR_WRITE,
+						   self->vc.req_write,
 						   0x0001,		/* value */
 						   0x0000,		/* idx */
 						   &data[i],		/* data */
@@ -398,7 +404,7 @@ fu_genesys_scaler_mst_i2c_bus_switch_to_ch0(FuGenesysScaler *self, GError **erro
 						   G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE,
 						   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
 						   G_USB_DEVICE_RECIPIENT_DEVICE,
-						   GENESYS_SCALER_MSTAR_WRITE,
+						   self->vc.req_write,
 						   0x0001,		/* value */
 						   0x0000,		/* idx */
 						   &data[i],		/* data */
@@ -427,7 +433,7 @@ fu_genesys_scaler_mst_i2c_bus_switch_to_ch4(FuGenesysScaler *self, GError **erro
 						   G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE,
 						   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
 						   G_USB_DEVICE_RECIPIENT_DEVICE,
-						   GENESYS_SCALER_MSTAR_WRITE,
+						   self->vc.req_write,
 						   0x0001,		/* value */
 						   0x0000,		/* idx */
 						   &data[i],		/* data */
@@ -531,7 +537,7 @@ fu_genesys_scaler_disable_wp(FuGenesysScaler *self, gboolean disable, GError **e
 					   G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE,
 					   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
 					   G_USB_DEVICE_RECIPIENT_DEVICE,
-					   GENESYS_SCALER_MSTAR_WRITE,
+					   self->vc.req_write,
 					   0x0003,			/* value */
 					   0x0000,			/* idx */
 					   data_out,			/* data */
@@ -549,7 +555,7 @@ fu_genesys_scaler_disable_wp(FuGenesysScaler *self, gboolean disable, GError **e
 					   G_USB_DEVICE_DIRECTION_DEVICE_TO_HOST,
 					   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
 					   G_USB_DEVICE_RECIPIENT_DEVICE,
-					   GENESYS_SCALER_MSTAR_READ,
+					   self->vc.req_read,
 					   0x0003,			/* value */
 					   0x0000,			/* idx */
 					   &data_out[3],		/* data */
@@ -626,7 +632,7 @@ fu_genesys_scaler_disable_wp(FuGenesysScaler *self, gboolean disable, GError **e
 					   G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE,
 					   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
 					   G_USB_DEVICE_RECIPIENT_DEVICE,
-					   GENESYS_SCALER_MSTAR_WRITE,
+					   self->vc.req_write,
 					   0x0001,			/* value */
 					   0x0000,			/* idx */
 					   data_out,			/* data */
@@ -649,7 +655,7 @@ fu_genesys_scaler_disable_wp(FuGenesysScaler *self, gboolean disable, GError **e
 					   G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE,
 					   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
 					   G_USB_DEVICE_RECIPIENT_DEVICE,
-					   GENESYS_SCALER_MSTAR_WRITE,
+					   self->vc.req_write,
 					   0x0003,			/* value */
 					   0x0000,			/* idx */
 					   data_en,			/* data */
@@ -667,7 +673,7 @@ fu_genesys_scaler_disable_wp(FuGenesysScaler *self, gboolean disable, GError **e
 					   G_USB_DEVICE_DIRECTION_DEVICE_TO_HOST,
 					   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
 					   G_USB_DEVICE_RECIPIENT_DEVICE,
-					   GENESYS_SCALER_MSTAR_READ,
+					   self->vc.req_read,
 					   0x0003,			/* value */
 					   0x0000,			/* idx */
 					   &data_en[3],			/* data */
@@ -712,7 +718,7 @@ fu_genesys_scaler_disable_wp(FuGenesysScaler *self, gboolean disable, GError **e
 					   G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE,
 					   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
 					   G_USB_DEVICE_RECIPIENT_DEVICE,
-					   GENESYS_SCALER_MSTAR_WRITE,
+					   self->vc.req_write,
 					   0x0001,		/* value */
 					   0x0000,		/* idx */
 					   data_en,		/* data */
@@ -747,7 +753,7 @@ fu_genesys_scaler_pause_r2_cpu(FuGenesysScaler *self, GError **error)
 					   G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE,
 					   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
 					   G_USB_DEVICE_RECIPIENT_DEVICE,
-					   GENESYS_SCALER_MSTAR_WRITE,
+					   self->vc.req_write,
 					   0x0003,		/* value */
 					   0x0000,		/* idx */
 					   data,		/* data */
@@ -765,7 +771,7 @@ fu_genesys_scaler_pause_r2_cpu(FuGenesysScaler *self, GError **error)
 					   G_USB_DEVICE_DIRECTION_DEVICE_TO_HOST,
 					   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
 					   G_USB_DEVICE_RECIPIENT_DEVICE,
-					   GENESYS_SCALER_MSTAR_READ,
+					   self->vc.req_read,
 					   0x0003,		/* value */
 					   0x0000,		/* idx */
 					   &data[5],		/* data */
@@ -790,7 +796,7 @@ fu_genesys_scaler_pause_r2_cpu(FuGenesysScaler *self, GError **error)
 					   G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE,
 					   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
 					   G_USB_DEVICE_RECIPIENT_DEVICE,
-					   GENESYS_SCALER_MSTAR_WRITE,
+					   self->vc.req_write,
 					   0x0003,		/* value */
 					   0x0000,		/* idx */
 					   data,		/* data */
@@ -828,7 +834,7 @@ fu_genesys_scaler_enter_isp_mode(FuGenesysScaler *self, GError **error)
 					   G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE,
 					   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
 					   G_USB_DEVICE_RECIPIENT_DEVICE,
-					   GENESYS_SCALER_MSTAR_WRITE,
+					   self->vc.req_write,
 					   0x0000,		/* value */
 					   0x0000,		/* idx */
 					   data,		/* data */
@@ -844,7 +850,7 @@ fu_genesys_scaler_enter_isp_mode(FuGenesysScaler *self, GError **error)
 						   G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE,
 						   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
 						   G_USB_DEVICE_RECIPIENT_DEVICE,
-						   GENESYS_SCALER_MSTAR_WRITE,
+						   self->vc.req_write,
 						   0x0000,		/* value */
 						   0x0000,		/* idx */
 						   data,		/* data */
@@ -874,7 +880,7 @@ fu_genesys_scaler_exit_isp_mode(FuGenesysScaler *self, GError **error)
 					   G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE,
 					   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
 					   G_USB_DEVICE_RECIPIENT_DEVICE,
-					   GENESYS_SCALER_MSTAR_WRITE,
+					   self->vc.req_write,
 					   0x0000,		/* value */
 					   0x0000,		/* idx */
 					   data,		/* data */
@@ -985,7 +991,7 @@ fu_genesys_scaler_query_flash_id(FuGenesysScaler *self, GError **error)
 					   G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE,
 					   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
 					   G_USB_DEVICE_RECIPIENT_DEVICE,
-					   GENESYS_SCALER_MSTAR_WRITE,
+					   self->vc.req_write,
 					   0x0000,		/* value */
 					   0x0000,		/* idx */
 					   data1,		/* data */
@@ -1002,7 +1008,7 @@ fu_genesys_scaler_query_flash_id(FuGenesysScaler *self, GError **error)
 					   G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE,
 					   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
 					   G_USB_DEVICE_RECIPIENT_DEVICE,
-					   GENESYS_SCALER_MSTAR_WRITE,
+					   self->vc.req_write,
 					   0x0000,		/* value */
 					   0x0000,		/* idx */
 					   data2,		/* data */
@@ -1019,7 +1025,7 @@ fu_genesys_scaler_query_flash_id(FuGenesysScaler *self, GError **error)
 					   G_USB_DEVICE_DIRECTION_DEVICE_TO_HOST,
 					   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
 					   G_USB_DEVICE_RECIPIENT_DEVICE,
-					   GENESYS_SCALER_MSTAR_READ,
+					   self->vc.req_read,
 					   0x0000,			/* value */
 					   0x0000,			/* idx */
 					   self->flash_id,		/* data */
@@ -1036,7 +1042,7 @@ fu_genesys_scaler_query_flash_id(FuGenesysScaler *self, GError **error)
 					   G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE,
 					   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
 					   G_USB_DEVICE_RECIPIENT_DEVICE,
-					   GENESYS_SCALER_MSTAR_WRITE,
+					   self->vc.req_write,
 					   0x0000,		/* value */
 					   0x0000,		/* idx */
 					   data3,		/* data */
@@ -1210,7 +1216,7 @@ fu_genesys_scaler_read_flash(FuGenesysScaler *self,
 					   G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE,
 					   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
 					   G_USB_DEVICE_RECIPIENT_DEVICE,
-					   GENESYS_SCALER_MSTAR_WRITE,
+					   self->vc.req_write,
 					   0x0000,		/* value */
 					   0x0000,		/* idx */
 					   data1,		/* data */
@@ -1228,7 +1234,7 @@ fu_genesys_scaler_read_flash(FuGenesysScaler *self,
 					   G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE,
 					   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
 					   G_USB_DEVICE_RECIPIENT_DEVICE,
-					   GENESYS_SCALER_MSTAR_WRITE,
+					   self->vc.req_write,
 					   0x0000,		/* value */
 					   0x0000,		/* idx */
 					   data2,		/* data */
@@ -1249,7 +1255,7 @@ fu_genesys_scaler_read_flash(FuGenesysScaler *self,
 						   G_USB_DEVICE_DIRECTION_DEVICE_TO_HOST,
 						   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
 						   G_USB_DEVICE_RECIPIENT_DEVICE,
-						   GENESYS_SCALER_MSTAR_READ,
+						   self->vc.req_read,
 						   0x0000,		/* value */
 						   0x0000,		/* idx */
 						   buf + count,		/* data */
@@ -1271,7 +1277,7 @@ fu_genesys_scaler_read_flash(FuGenesysScaler *self,
 					   G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE,
 					   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
 					   G_USB_DEVICE_RECIPIENT_DEVICE,
-					   GENESYS_SCALER_MSTAR_WRITE,
+					   self->vc.req_write,
 					   0x0000,		/* value */
 					   0x0000,		/* idx */
 					   data3,		/* data */
@@ -1303,7 +1309,7 @@ fu_genesys_scaler_wait_flash_control_register_cb(FuDevice *dev,
 					   G_USB_DEVICE_DIRECTION_DEVICE_TO_HOST,
 					   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
 					   G_USB_DEVICE_RECIPIENT_DEVICE,
-					   GENESYS_SCALER_MSTAR_READ,
+					   self->vc.req_read,
 					   helper->reg << 8 | 0x04,	/* value */
 					   0x0000,			/* idx */
 					   &status,			/* data */
@@ -1352,7 +1358,7 @@ fu_genesys_scaler_flash_control_write_enable(FuGenesysScaler *self,
 					   G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE,
 					   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
 					   G_USB_DEVICE_RECIPIENT_DEVICE,
-					   GENESYS_SCALER_MSTAR_WRITE,
+					   self->vc.req_write,
 					   0x0000,		/* value */
 					   0x0000,		/* idx */
 					   data1,		/* data */
@@ -1369,7 +1375,7 @@ fu_genesys_scaler_flash_control_write_enable(FuGenesysScaler *self,
 					   G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE,
 					   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
 					   G_USB_DEVICE_RECIPIENT_DEVICE,
-					   GENESYS_SCALER_MSTAR_WRITE,
+					   self->vc.req_write,
 					   0x0000,		/* value */
 					   0x0000,		/* idx */
 					   data2,		/* data */
@@ -1412,7 +1418,7 @@ fu_genesys_scaler_flash_control_write_status(FuGenesysScaler *self,
 					   G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE,
 					   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
 					   G_USB_DEVICE_RECIPIENT_DEVICE,
-					   GENESYS_SCALER_MSTAR_WRITE,
+					   self->vc.req_write,
 					   0x0000,		/* value */
 					   0x0000,		/* idx */
 					   data1,		/* data */
@@ -1429,7 +1435,7 @@ fu_genesys_scaler_flash_control_write_status(FuGenesysScaler *self,
 					   G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE,
 					   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
 					   G_USB_DEVICE_RECIPIENT_DEVICE,
-					   GENESYS_SCALER_MSTAR_WRITE,
+					   self->vc.req_write,
 					   0x0000,		/* value */
 					   0x0000,		/* idx */
 					   data2,		/* data */
@@ -1497,7 +1503,7 @@ fu_genesys_scaler_flash_control_sector_erase(FuGenesysScaler *self,
 					   G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE,
 					   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
 					   G_USB_DEVICE_RECIPIENT_DEVICE,
-					   GENESYS_SCALER_MSTAR_WRITE,
+					   self->vc.req_write,
 					   0x0000,		/* value */
 					   0x0000,		/* idx */
 					   data1,		/* data */
@@ -1514,7 +1520,7 @@ fu_genesys_scaler_flash_control_sector_erase(FuGenesysScaler *self,
 					   G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE,
 					   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
 					   G_USB_DEVICE_RECIPIENT_DEVICE,
-					   GENESYS_SCALER_MSTAR_WRITE,
+					   self->vc.req_write,
 					   0x0000,		/* value */
 					   0x0000,		/* idx */
 					   data2,		/* data */
@@ -1608,7 +1614,7 @@ fu_genesys_scaler_flash_control_page_program(FuGenesysScaler *self,
 					   G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE,
 					   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
 					   G_USB_DEVICE_RECIPIENT_DEVICE,
-					   GENESYS_SCALER_MSTAR_WRITE,
+					   self->vc.req_write,
 					   0x0010,	/* value */
 					   0x0000,	/* idx */
 					   data,	/* data */
@@ -1629,7 +1635,7 @@ fu_genesys_scaler_flash_control_page_program(FuGenesysScaler *self,
 						   G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE,
 						   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
 						   G_USB_DEVICE_RECIPIENT_DEVICE,
-						   GENESYS_SCALER_MSTAR_WRITE,
+						   self->vc.req_write,
 						   0x0010 + (0x0010 * i),	/* value */
 						   0x0000,			/* idx */
 						   data,			/* data */
@@ -1649,7 +1655,7 @@ fu_genesys_scaler_flash_control_page_program(FuGenesysScaler *self,
 					   G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE,
 					   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
 					   G_USB_DEVICE_RECIPIENT_DEVICE,
-					   GENESYS_SCALER_MSTAR_WRITE,
+					   self->vc.req_write,
 					   (0x0010 + (0x0010 * count)) | 0x0080,	/* value */
 					   0x0000,					/* idx */
 					   data,					/* data */
@@ -1669,7 +1675,7 @@ fu_genesys_scaler_flash_control_page_program(FuGenesysScaler *self,
 					   G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE,
 					   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
 					   G_USB_DEVICE_RECIPIENT_DEVICE,
-					   GENESYS_SCALER_MSTAR_WRITE,
+					   self->vc.req_write,
 					   /* ??? */,		/* value */
 					   /* ??? */,		/* idx */
 					   data2,		/* data */
@@ -1774,6 +1780,13 @@ fu_genesys_scaler_probe(FuDevice *device, GError **error)
 				   10);
 		fu_common_dump_raw(G_LOG_DOMAIN, "public-key",
 				   self->public_key, sizeof(self->public_key));
+	}
+
+	self->vc.req_read = GENESYS_SCALER_MSTAR_READ;
+	self->vc.req_write = GENESYS_SCALER_MSTAR_WRITE;
+	if (self->level != 1) {
+		self->vc.req_read += 3;
+		self->vc.req_write += 3;
 	}
 
 	return TRUE;
