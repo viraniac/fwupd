@@ -1921,6 +1921,8 @@ fu_genesys_scaler_write_firmware(FuDevice *device,
 	if (!fu_genesys_scaler_read_flash(self, fu_progress_get_child(progress),
 					  addr, buf, size, error))
 		goto error;
+	if (memcmp(buf, data, size))
+		goto error;
 	fu_progress_step_done(progress);
 
 	if (!fu_genesys_scaler_exit(self, error))
