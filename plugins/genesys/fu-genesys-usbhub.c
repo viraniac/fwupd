@@ -1197,18 +1197,18 @@ fu_genesys_usbhub_write_firmware(FuDevice *device,
 		if (read_first_bank) {
 			blobsz = self->code_size;
 			if (!blobsz)
-				return FALSE;
+				goto error;
 
 			blob = g_malloc0(blobsz);
 			if (!blobsz)
-				return FALSE;
+				goto error;
 
 			if (!fu_genesys_usbhub_read_flash(self,
 							  self->fw_bank_addr[0],
 							  blob,
 							  blobsz,
 							  error))
-				return FALSE;
+				goto error;
 			fu_progress_step_done(progress);
 		}
 
@@ -1216,7 +1216,7 @@ fu_genesys_usbhub_write_firmware(FuDevice *device,
 						   self->fw_bank_addr[1],
 						   blobsz ? blobsz : g_bytes_get_size(fw_blob),
 						   error))
-			return FALSE;
+			goto error;
 		fu_progress_step_done(progress);
 
 		if (!fu_genesys_usbhub_write_flash(self,
@@ -1224,7 +1224,7 @@ fu_genesys_usbhub_write_firmware(FuDevice *device,
 						   blob   ? blob   : g_bytes_get_data(fw_blob, NULL),
 						   blobsz ? blobsz : g_bytes_get_size(fw_blob),
 						   error))
-			return FALSE;
+			goto error;
 		fu_progress_step_done(progress);
 
 		buf = g_malloc0(blobsz ? blobsz : g_bytes_get_size(fw_blob));
@@ -1233,10 +1233,10 @@ fu_genesys_usbhub_write_firmware(FuDevice *device,
 						  buf,
 						  blobsz ? blobsz : g_bytes_get_size(fw_blob),
 						  error))
-			return FALSE;
+			goto error;
 		if (memcmp(buf, blob ? blob : g_bytes_get_data(fw_blob, NULL),
 			   blobsz ? blobsz : g_bytes_get_size(fw_blob)))
-			return FALSE;
+			goto error;
 		fu_progress_step_done(progress);
 		g_free(buf);
 		buf = NULL;
@@ -1247,7 +1247,7 @@ fu_genesys_usbhub_write_firmware(FuDevice *device,
 					   self->fw_bank_addr[0],
 					   g_bytes_get_size(fw_blob),
 					   error))
-		return FALSE;
+		goto error;
 	fu_progress_step_done(progress);
 
 	if (!fu_genesys_usbhub_write_flash(self,
@@ -1255,7 +1255,7 @@ fu_genesys_usbhub_write_firmware(FuDevice *device,
 					   g_bytes_get_data(fw_blob, NULL),
 					   g_bytes_get_size(fw_blob),
 					   error))
-		return FALSE;
+		goto error;
 	fu_progress_step_done(progress);
 
 	buf = g_malloc0(g_bytes_get_size(fw_blob));
@@ -1264,9 +1264,9 @@ fu_genesys_usbhub_write_firmware(FuDevice *device,
 					  buf,
 					  g_bytes_get_size(fw_blob),
 					  error))
-		return FALSE;
+		goto error;
 	if (memcmp(buf, g_bytes_get_data(fw_blob, NULL), g_bytes_get_size(fw_blob)))
-		return FALSE;
+		goto error;
 	fu_progress_step_done(progress);
 
 	/*
@@ -1277,11 +1277,15 @@ fu_genesys_usbhub_write_firmware(FuDevice *device,
 	 * USB error on device 03f0:0610 : No such device (it may have been disconnected) [-4]
 	 */
 	if (!fu_genesys_usbhub_reset(self, error))
-		return FALSE;
+		goto error;
 
 	fu_device_add_flag(device, FWUPD_DEVICE_FLAG_WAIT_FOR_REPLUG);
 
 	return TRUE;
+
+error:
+	fu_genesys_usbhub_reset(self, error);
+	return FALSE;
 }
 
 static void
