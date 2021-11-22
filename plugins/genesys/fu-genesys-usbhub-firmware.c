@@ -10,18 +10,18 @@
 
 #include "fu-genesys-common.h"
 
-#include "fu-genesys-firmware.h"
+#include "fu-genesys-usbhub-firmware.h"
 
-struct _FuGenesysFirmware {
+struct _FuGenesysUsbHubFirmware {
 	FuFirmwareClass parent_instance;
 	guint16 raw_fw_version;
 	StaticToolString static_tool_string;
 };
 
-G_DEFINE_TYPE(FuGenesysFirmware, fu_genesys_firmware, FU_TYPE_FIRMWARE)
+G_DEFINE_TYPE(FuGenesysUsbHubFirmware, fu_genesys_usbhub_firmware, FU_TYPE_FIRMWARE)
 
 static guint16
-fu_genesys_firmware_checksum(const guint8 *buf, gsize bufsz)
+fu_genesys_usbhub_firmware_checksum(const guint8 *buf, gsize bufsz)
 {
 	guint16 checksum = 0;
 
@@ -32,14 +32,14 @@ fu_genesys_firmware_checksum(const guint8 *buf, gsize bufsz)
 }
 
 static gboolean
-fu_genesys_firmware_parse(FuFirmware *firmware,
-			  GBytes *fw,
-			  guint64 addr_start,
-			  guint64 addr_end,
-			  FwupdInstallFlags flags,
-			  GError **error)
+fu_genesys_usbhub_firmware_parse(FuFirmware *firmware,
+				 GBytes *fw,
+				 guint64 addr_start,
+				 guint64 addr_end,
+				 FwupdInstallFlags flags,
+				 GError **error)
 {
-	FuGenesysFirmware *self = FU_GENESYS_FIRMWARE(firmware);
+	FuGenesysUsbHubFirmware *self = FU_GENESYS_USBHUB_FIRMWARE(firmware);
 	gsize bufsz = 0;
 	const guint8 *buf = g_bytes_get_data(fw, &bufsz);
 	g_autofree gchar *fw_version = NULL;
@@ -124,8 +124,7 @@ fu_genesys_firmware_parse(FuFirmware *firmware,
 		return FALSE;
 
 	/* Calculate checksum */
-	checksum = fu_genesys_firmware_checksum(buf,
-						code_size - sizeof(checksum));
+	checksum = fu_genesys_usbhub_firmware_checksum(buf, code_size - sizeof(checksum));
 	if (checksum != fw_checksum)
 		g_warning("checksum mismatch, got 0x%04x, expected 0x%04x",
 			  checksum, fw_checksum);
@@ -149,11 +148,11 @@ fu_genesys_firmware_parse(FuFirmware *firmware,
 }
 
 static void
-fu_genesys_firmware_export(FuFirmware *firmware,
-			   FuFirmwareExportFlags flags,
-			   XbBuilderNode *bn)
+fu_genesys_usbhub_firmware_export(FuFirmware *firmware,
+				  FuFirmwareExportFlags flags,
+				  XbBuilderNode *bn)
 {
-	FuGenesysFirmware *self = FU_GENESYS_FIRMWARE(firmware);
+	FuGenesysUsbHubFirmware *self = FU_GENESYS_USBHUB_FIRMWARE(firmware);
 
 	if (flags & FU_FIRMWARE_EXPORT_FLAG_INCLUDE_DEBUG) {
 		gchar tool_string_version[2] = { '\0' };
@@ -237,15 +236,15 @@ fu_genesys_firmware_export(FuFirmware *firmware,
 }
 
 static void
-fu_genesys_firmware_init(FuGenesysFirmware *self)
+fu_genesys_usbhub_firmware_init(FuGenesysUsbHubFirmware *self)
 {
         fu_firmware_add_flag(FU_FIRMWARE(self), FU_FIRMWARE_FLAG_HAS_CHECKSUM);
 }
 
 static void
-fu_genesys_firmware_class_init(FuGenesysFirmwareClass *klass)
+fu_genesys_usbhub_firmware_class_init(FuGenesysUsbHubFirmwareClass *klass)
 {
 	FuFirmwareClass *klass_firmware = FU_FIRMWARE_CLASS(klass);
-	klass_firmware->parse = fu_genesys_firmware_parse;
-	klass_firmware->export = fu_genesys_firmware_export;
+	klass_firmware->parse = fu_genesys_usbhub_firmware_parse;
+	klass_firmware->export = fu_genesys_usbhub_firmware_export;
 }
