@@ -1126,6 +1126,8 @@ fu_genesys_scaler_get_version(FuGenesysScaler *self,
 	return TRUE;
 }
 
+#if 0
+/* [TODO]: Enable signature/crypto? */
 static gboolean
 fu_genesys_scaler_get_public_key(FuGenesysScaler *self,
 				 guint8 *buf,
@@ -1167,6 +1169,7 @@ fu_genesys_scaler_get_public_key(FuGenesysScaler *self,
 
 	return TRUE;
 }
+#endif
 
 static gboolean
 fu_genesys_scaler_read_flash(FuGenesysScaler *self,
@@ -1752,9 +1755,12 @@ fu_genesys_scaler_probe(FuDevice *device, GError **error)
 		return FALSE;
 	version[7] = 0;
 
+#if 0
+	/* [TODO]: Enable signature/crypto? */
 	if (!fu_genesys_scaler_get_public_key(self, self->public_key,
 					      sizeof(self->public_key), error))
 		return FALSE;
+#endif
 
 	fu_device_set_version(device, (gchar *)&version[1]);
 	fu_device_set_version_format(device, FWUPD_VERSION_FORMAT_PLAIN);
@@ -1841,10 +1847,14 @@ fu_genesys_scaler_write_firmware(FuDevice *device,
 {
 	FuGenesysScaler *self = FU_GENESYS_SCALER(device);
 	g_autoptr(FuDeviceLocker) locker = NULL;
+#if 0
+	/* [TODO]: Not used by M27fd */
 	guint protect_sector_addr[2] = { 0x000000 };
 	gsize protect_sector_size[2] = { 0x000000 };
+	/* [TODO]: Enable signature/crypto? */
 	guint public_key_addr = 0x000000;
 	gsize public_key_size = 0x000000;
+#endif
 	g_autofree guint8 *buf = NULL;
 	guint addr = 0x000000;
 	gsize size = 0x200000;
@@ -1877,11 +1887,14 @@ fu_genesys_scaler_write_firmware(FuDevice *device,
 	if (footer.data.header.configuration_setting.bits.second_image)
 		addr = *(guint32 *)footer.data.header.second_image_program_addr;
 
+#if 0
+	/* [TODO]: Enable signature/crypto? */
 	if (footer.data.header.configuration_setting.bits.decrypt_mode) {
 		public_key_addr = *(guint32 *)footer.data.header.scaler_public_key_addr;
 		public_key_size = 0x1000;
 	}
 
+	/* [TODO]: Not used by M27fd */
 	if (footer.data.header.configuration_setting.bits.special_protect_sector) {
 		if (footer.data.header.protect_sector[0].area.size) {
 			protect_sector_addr[0] = (footer.data.header.protect_sector[0].area.addr_high  << 16) |
@@ -1899,6 +1912,7 @@ fu_genesys_scaler_write_firmware(FuDevice *device,
 			protect_sector_size[1] = footer.data.header.protect_sector[1].area.size * 0x1000;
 		}
 	}
+#endif
 
 	if (!fu_genesys_scaler_enter_isp(self, error))
 		goto error;
