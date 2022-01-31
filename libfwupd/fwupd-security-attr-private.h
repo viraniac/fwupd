@@ -297,6 +297,22 @@ G_BEGIN_DECLS
  **/
 #define FWUPD_SECURITY_ATTR_ID_PLATFORM_ROLLBACK_PROTECTION                                        \
 	"org.fwupd.hsi.PlatformRollbackProtection"
+/**
+ * FWUPD_SECURITY_ATTR_ID_SPI_WRITE_PROTECTION
+ *
+ * Host Security ID attribute for SPI Write protection
+ *
+ * Since: 1.8.0
+ **/
+#define FWUPD_SECURITY_ATTR_ID_SPI_WRITE_PROTECTION "org.fwupd.hsi.SpiWriteProtection"
+/**
+ * FWUPD_SECURITY_ATTR_ID_SPI_PROTECTION
+ *
+ * Host Security ID attribute for SPI replay protection
+ *
+ * Since: 1.8.0
+ **/
+#define FWUPD_SECURITY_ATTR_ID_SPI_REPLAY_PROTECTION "org.fwupd.hsi.SpiReplayProtection"
 
 GVariant *
 fwupd_security_attr_to_variant(FwupdSecurityAttr *self);
