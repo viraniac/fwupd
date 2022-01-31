@@ -454,6 +454,7 @@ done
 %{_libdir}/fwupd-plugins-%{fwupdplugin_version}/libfu_plugin_linux_tainted.so
 %if 0%{?have_msr}
 %{_libdir}/fwupd-plugins-%{fwupdplugin_version}/libfu_plugin_msr.so
+%{_libdir}/fwupd-plugins-%{fwupdplugin_version}/libfu_plugin_pci_psp.so
 %endif
 %{_libdir}/fwupd-plugins-%{fwupdplugin_version}/libfu_plugin_mtd.so
 %{_libdir}/fwupd-plugins-%{fwupdplugin_version}/libfu_plugin_nitrokey.so
