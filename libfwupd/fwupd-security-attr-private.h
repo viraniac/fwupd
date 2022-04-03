@@ -264,12 +264,13 @@ G_BEGIN_DECLS
  **/
 #define FWUPD_SECURITY_ATTR_ID_INTEL_DCI_ENABLED "org.fwupd.hsi.IntelDci.Enabled"
 /**
- * FWUPD_SECURITY_ATTR_ID_INTEL_DCI_LOCKED:
+ * FWUPD_SECURITY_ATTR_ID_PLATFORM_FUSED:
  *
- * Host Security ID attribute for Intel DCI locked
+ * Host Security ID attribute for fused parts
  *
- * Since: 1.5.0
+ * Since: 1.8.0
  **/
+#define FWUPD_SECURITY_ATTR_ID_PLATFORM_FUSED "org.fwupd.hsi.PlatformFused"
 /**
  * FWUPD_SECURITY_ATTR_ID_PLATFORM_DEBUG_LOCKED:
  *

@@ -186,6 +186,10 @@ fu_security_attr_get_name(FwupdSecurityAttr *attr)
 		/* TRANSLATORS: Title: if firmware enforces rollback protection */
 		return g_strdup(_("Rollback protection"));
 	}
+	if (g_strcmp0(appstream_id, FWUPD_SECURITY_ATTR_ID_PLATFORM_FUSED) == 0) {
+		/* TRANSLATORS: Title: if the part has been fused */
+		return g_strdup(_("Fused platform"));
+	}
 	if (g_strcmp0(appstream_id, FWUPD_SECURITY_ATTR_ID_SPI_REPLAY_PROTECTION) == 0) {
 		/* TRANSLATORS: Title: if hardware enforces control of SPI replays */
 		return g_strdup(_("SPI replay protection"));
