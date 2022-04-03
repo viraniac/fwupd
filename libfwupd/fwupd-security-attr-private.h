@@ -270,7 +270,17 @@ G_BEGIN_DECLS
  *
  * Since: 1.5.0
  **/
-#define FWUPD_SECURITY_ATTR_ID_INTEL_DCI_LOCKED "org.fwupd.hsi.IntelDci.Locked"
+/**
+ * FWUPD_SECURITY_ATTR_ID_PLATFORM_DEBUG_LOCKED:
+ *
+ * Host Security ID attribute for parts locked from debugging
+ *
+ * This was previously known as org.fwupd.hsi.IntelDci.Locked for Intel 1.5.0+
+ * It was renamed for all vendor support in 1.8.0.
+ *
+ * Since: 1.8.0
+ **/
+#define FWUPD_SECURITY_ATTR_ID_PLATFORM_DEBUG_LOCKED "org.fwupd.hsi.PlatformDebugLocked"
 /**
  * FWUPD_SECURITY_ATTR_ID_UEFI_PK:
  *
