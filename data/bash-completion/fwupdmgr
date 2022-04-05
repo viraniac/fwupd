@@ -106,8 +106,10 @@ _fwupdmgr()
 
 	case $command in
 	activate|clear-results|downgrade|get-releases|get-results|unlock|verify|verify-update|get-updates|switch-branch|update|upgrade)
+		#device ID
 		if [[ "$prev" = "$command" ]]; then
 			_show_device_ids
+		#modifiers
 		else
 			_show_modifiers
 		fi
